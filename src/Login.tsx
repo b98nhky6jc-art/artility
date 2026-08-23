@@ -9,10 +9,33 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [signingIn, setSigningIn] = useState(false);
+  const [socialSigningIn, setSocialSigningIn] = useState(false);
   const [error, setError] = useState("");
+
+  async function handleGoogleSignIn() {
+    setError("");
+    setSocialSigningIn(true);
+
+    try {
+      const result = await authClient.signIn.social({
+        provider: "google",
+        callbackURL: "/",
+      });
+
+      if (result?.error) {
+        setError(result.error.message ?? "Could not sign in with Google.");
+        setSocialSigningIn(false);
+      }
+    } catch (error) {
+      console.error(error);
+      setError("Could not sign in with Google.");
+      setSocialSigningIn(false);
+    }
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
     setError("");
     setSigningIn(true);
 
@@ -53,6 +76,20 @@ export default function Login() {
           <h1>Sign in</h1>
 
           <p>Pick up where you left off.</p>
+
+          <button
+            type="button"
+            className="social-login-button"
+            onClick={handleGoogleSignIn}
+            disabled={socialSigningIn}
+          >
+            <span className="google-mark">G</span>
+            {socialSigningIn ? "Connecting…" : "Continue with Google"}
+          </button>
+
+          <div className="auth-divider">
+            <span>or</span>
+          </div>
 
           <form className="add-artwork-form" onSubmit={handleSubmit}>
             <label>

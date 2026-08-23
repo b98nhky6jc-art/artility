@@ -9,6 +9,9 @@ export default defineConfig({
 
     VitePWA({
       registerType: "autoUpdate",
+      devOptions: {
+        navigateFallbackAllowlist: [/^\/$/],
+      },
 
       manifest: {
         name: "Box Hunt",
@@ -43,31 +46,31 @@ export default defineConfig({
         ],
       },
 
-workbox: {
-  cleanupOutdatedCaches: true,
+      workbox: {
+        cleanupOutdatedCaches: true,
 
-  runtimeCaching: [
-    {
-      urlPattern: ({ url }) =>
-        url.pathname.startsWith("/api/images/"),
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) =>
+              url.pathname.startsWith("/api/images/"),
 
-      handler: "CacheFirst",
+            handler: "CacheFirst",
 
-      options: {
-        cacheName: "box-hunt-artwork-images",
+            options: {
+              cacheName: "box-hunt-artwork-images",
 
-        expiration: {
-          maxEntries: 200,
-          maxAgeSeconds: 60 * 60 * 24 * 365,
-        },
+              expiration: {
+                maxEntries: 200,
+                maxAgeSeconds: 60 * 60 * 24 * 365,
+              },
 
-        cacheableResponse: {
-          statuses: [0, 200],
-        },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+        ],
       },
-    },
-  ],
-},
     }),
 
     cloudflare(),

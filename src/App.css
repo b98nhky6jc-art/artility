@@ -2320,3 +2320,70 @@ main {
     grid-template-columns: 1fr;
   }
 }
+.social-login-button {
+  width: 100%;
+  min-height: 54px;
+  margin-top: 24px;
+  padding: 12px 20px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+
+  border: 1px solid var(--soft-line);
+  border-radius: var(--radius-pill);
+
+  background: #fff;
+  color: var(--ink);
+
+  font: inherit;
+  font-weight: 700;
+
+  cursor: pointer;
+}
+
+.social-login-button:hover {
+  border-color: var(--ink);
+}
+
+.social-login-button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.google-mark {
+  width: 24px;
+  height: 24px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  border: 1px solid var(--soft-line);
+  border-radius: 50%;
+
+  font-weight: 800;
+}
+
+.auth-divider {
+  margin: 22px 0;
+
+  display: flex;
+  align-items: center;
+  gap: 14px;
+
+  color: var(--muted);
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--soft-line);
+}
+
+.auth-divider span {
+  font-size: 0.9rem;
+}
