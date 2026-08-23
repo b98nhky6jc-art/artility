@@ -101,6 +101,13 @@ export default function MobileNav() {
         <span className="nav-icon">◎</span>
         <span>{signedIn ? "Profile" : "Sign in"}</span>
       </Link>
+      <Link
+        to="/artists"
+        className={location.pathname.startsWith("/artist") ? "active" : ""}
+      >
+        <span className="nav-icon">✦</span>
+        <span>Artists</span>
+      </Link>
     </nav>
   );
 }
