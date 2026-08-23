@@ -16,6 +16,7 @@ type Find = {
   artist_name: string | null;
   primary_photo: string | null;
   checked_in_at: string;
+  artist_id: number | null;
 };
 
 export default function MyFinds() {

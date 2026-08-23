@@ -18,6 +18,7 @@ type NearbyArtwork = {
   primary_photo: string | null;
   photo_count: number;
   distance_metres: number;
+  artist_id: number | null;
 };
 async function normaliseImage(file: File): Promise<File> {
   const MAX_DIMENSION = 2200;

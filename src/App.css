@@ -2387,3 +2387,167 @@ main {
 .auth-divider span {
   font-size: 0.9rem;
 }
+/* Artist directory */
+
+.artists-header {
+  max-width: 720px;
+  margin-bottom: 34px;
+}
+
+.artists-header h1,
+.artist-profile h1 {
+  margin-bottom: 10px;
+}
+
+.artist-search {
+  width: 100%;
+  margin-top: 22px;
+  padding: 15px 18px;
+  border: 1px solid var(--soft-line);
+  border-radius: var(--radius-pill);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+
+.artist-search:focus {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+.artist-directory {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(230px, 1fr)
+  );
+  gap: 20px;
+}
+
+.artist-card {
+  overflow: hidden;
+  display: block;
+  border: 1px solid var(--soft-line);
+  border-radius: var(--radius-medium);
+  background: var(--paper);
+  color: var(--ink);
+  text-decoration: none;
+  box-shadow: 0 8px 24px var(--shadow-soft);
+}
+
+.artist-card:hover {
+  transform: translateY(-2px);
+}
+
+.artist-card-image {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  display: block;
+  object-fit: cover;
+}
+
+.artist-card-placeholder {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--soft-yellow);
+  color: var(--ink);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.artist-card-copy {
+  padding: 18px;
+}
+
+.artist-card-copy h2 {
+  margin: 0 0 5px;
+  font-size: 1.2rem;
+}
+
+.artist-card-copy p {
+  margin: 0 0 10px;
+  color: var(--muted);
+}
+
+.artist-card-copy span {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.artist-profile {
+  max-width: 760px;
+  margin-bottom: 46px;
+}
+
+.artist-profile-link {
+  display: inline-block;
+  margin: 5px 14px 5px 0;
+  color: var(--teal);
+  font-weight: 700;
+}
+
+.artist-profile-bio {
+  max-width: 680px;
+  margin-top: 20px;
+  line-height: 1.6;
+}
+
+.artist-artworks {
+  margin-top: 24px;
+}
+
+.artist-artwork-grid {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(230px, 1fr)
+  );
+  gap: 20px;
+}
+
+.artist-artwork-card {
+  overflow: hidden;
+  border: 1px solid var(--soft-line);
+  border-radius: var(--radius-medium);
+  background: var(--paper);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.artist-artwork-card img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  display: block;
+  object-fit: cover;
+}
+
+.artist-artwork-copy {
+  padding: 16px;
+}
+
+.artist-artwork-copy h2 {
+  margin: 0 0 6px;
+  font-size: 1.1rem;
+}
+
+.artist-artwork-copy p {
+  margin: 0;
+  color: var(--muted);
+}
+
+@media (max-width: 620px) {
+  .artist-directory,
+  .artist-artwork-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .artist-card-copy,
+  .artist-artwork-copy {
+    padding: 12px;
+  }
+}

@@ -344,9 +344,9 @@ export default function ArtworkDetail() {
             <h1>{artwork.title?.trim() || "Utility cabinet"}</h1>
 
             <ArtistAttribution
-              artistName={artwork.artist_name}
-              instagramHandle={artwork.instagram_handle}
-            />
+  artistName={artwork.artist_name}
+  instagramHandle={artwork.instagram_handle}
+/>
 
             <p className="detail-meta">
               {artwork.infrastructure_type}

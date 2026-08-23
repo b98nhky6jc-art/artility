@@ -6,6 +6,7 @@ import { authClient } from "./lib/auth-client";
 import { getArtworkDisplayTitle } from "./artworkDisplay";
 import ArtistAttribution from "./ArtistAttribution";
 
+
 type Artwork = {
   id: number;
   title: string | null;
@@ -19,6 +20,7 @@ type Artwork = {
   artist_name: string | null;
   instagram_handle: string | null;
   primary_photo: string | null;
+  artist_id: number | null;
 };
 
 function App() {
@@ -57,12 +59,17 @@ function App() {
             <span className="brand-name">Artility</span>
             <span className="beta-badge">BETA</span>
           </div>
-                  </Link>
+        </Link>
 
         <nav className="desktop-nav" aria-label="Primary navigation">
           <a href="#nearby" className="nav-link">
             Explore
           </a>
+
+          <Link to="/artists" className="nav-link">
+            Artists
+          </Link>
+
           <Link to="/contact" className="nav-link">
             Contact
           </Link>
@@ -170,9 +177,9 @@ function App() {
 
                     <p className="artist">
                       <ArtistAttribution
-                        artistName={artwork.artist_name}
-                        instagramHandle={artwork.instagram_handle}
-                      />
+  artistName={artwork.artist_name}
+  instagramHandle={artwork.instagram_handle}
+/>
                     </p>
 
                     <p className="metadata">

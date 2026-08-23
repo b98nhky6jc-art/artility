@@ -457,7 +457,95 @@ export default {
 
       return Response.json(nearby);
     }
+    if (url.pathname === "/api/artists" && request.method === "GET") {
+      const result = await env.DB.prepare(`
+        SELECT
+          artists.id,
+          artists.name,
+          artists.instagram_handle,
+          artists.website_url,
+          artists.bio,
+          artists.created_at,
+          COUNT(artworks.id) AS artwork_count,
+          (
+            SELECT photos.storage_key
+            FROM artworks AS representative_artwork
+            LEFT JOIN photos
+              ON photos.artwork_id = representative_artwork.id
+              AND photos.is_primary = 1
+            WHERE representative_artwork.artist_id = artists.id
+              AND photos.storage_key IS NOT NULL
+            ORDER BY representative_artwork.created_at DESC
+            LIMIT 1
+          ) AS primary_photo
+        FROM artists
+        LEFT JOIN artworks
+          ON artworks.artist_id = artists.id
+        GROUP BY artists.id
+        HAVING COUNT(artworks.id) > 0
+        ORDER BY artists.name COLLATE NOCASE
+      `).all();
 
+      return Response.json(result.results);
+    }
+
+    const artistDetailMatch = url.pathname.match(
+      /^\/api\/artists\/(\d+)$/,
+    );
+
+    if (artistDetailMatch && request.method === "GET") {
+      const artistId = Number(artistDetailMatch[1]);
+
+      const artist = await env.DB.prepare(`
+        SELECT
+          id,
+          name,
+          instagram_handle,
+          website_url,
+          bio,
+          created_at
+        FROM artists
+        WHERE id = ?
+      `)
+        .bind(artistId)
+        .first();
+
+      if (!artist) {
+        return Response.json(
+          { error: "Artist not found" },
+          { status: 404 },
+        );
+      }
+
+      const artworks = await env.DB.prepare(`
+        SELECT
+          artworks.id,
+          artworks.title,
+          artworks.description,
+          artworks.latitude,
+          artworks.longitude,
+          artworks.town,
+          artworks.city,
+          artworks.infrastructure_type,
+artworks.status,
+artworks.artist_id,
+artworks.created_at,
+          photos.storage_key AS primary_photo
+        FROM artworks
+        LEFT JOIN photos
+          ON photos.artwork_id = artworks.id
+          AND photos.is_primary = 1
+        WHERE artworks.artist_id = ?
+        ORDER BY artworks.created_at DESC
+      `)
+        .bind(artistId)
+        .all();
+
+      return Response.json({
+        artist,
+        artworks: artworks.results,
+      });
+    }
     if (url.pathname === "/api/artworks" && request.method === "GET") {
       const result = await env.DB.prepare(`
         SELECT
@@ -855,9 +943,10 @@ photos.created_at AS photo_added_at
           artworks.longitude,
           artworks.town,
           artworks.city,
-          artworks.infrastructure_type,
-          artworks.status,
-          artists.name AS artist_name,
+         artworks.infrastructure_type,
+artworks.status,
+artworks.artist_id,
+artists.name AS artist_name,
           artists.instagram_handle,
           photos.storage_key AS primary_photo,
           checkins.checked_in_at

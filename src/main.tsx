@@ -11,6 +11,8 @@ import Signup from "./Signup.tsx";
 import Login from "./Login.tsx";
 import MobileNav from "./MobileNav.tsx";
 import Contact from "./Contact.tsx";
+import Artists from "./Artists.tsx";
+import ArtistDetail from "./ArtistDetail.tsx";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -23,6 +25,8 @@ createRoot(document.getElementById("root")!).render(
         <Route path="/my-finds" element={<MyFinds />} />
         <Route path="/add-artwork" element={<AddArtwork />} />
         <Route path="/contact" element={<Contact />} />
+        <Route path="/artists" element={<Artists />} />
+<Route path="/artist/:id" element={<ArtistDetail />} />
       </Routes>
 
       <MobileNav />
