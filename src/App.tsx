@@ -111,9 +111,8 @@ function App() {
             </h2>
 
             <p>
-              Discover painted utility boxes, street cabinets and overlooked
-              public infrastructure. Check in, contribute photos and help map
-              the artists behind them.
+              Discover artists around you, head out for a walk, collect what you find, and
+  add your own discoveries to help others explore too.
             </p>
 
             <div className="hero-actions">
