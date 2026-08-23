@@ -14,8 +14,8 @@ export default defineConfig({
       },
 
       manifest: {
-        name: "Box Hunt",
-        short_name: "Box Hunt",
+        name: "Artility",
+        short_name: "Artility",
         description: "Find, photograph and check in at street art hiding in plain sight.",
 
         theme_color: "#082b50",
@@ -57,7 +57,7 @@ export default defineConfig({
             handler: "CacheFirst",
 
             options: {
-              cacheName: "box-hunt-artwork-images",
+              cacheName: "artility-artwork-images",
 
               expiration: {
                 maxEntries: 200,
