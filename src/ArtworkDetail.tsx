@@ -25,6 +25,17 @@ type Artwork = {
   primary_photo: string | null;
   photo_added_at: string | null;
 };
+type ArtworkPhoto = {
+  id: number;
+  storage_key: string;
+  is_primary: number;
+  created_at: string;
+};
+
+type ArtworkDetailResponse = {
+  artwork: Artwork;
+  photos: ArtworkPhoto[];
+};
 
 const CHECKIN_RADIUS_METRES = 100;
 
@@ -65,6 +76,9 @@ function calculateDistanceMetres(
 export default function ArtworkDetail() {
 
   const { id } = useParams();
+  const [photos, setPhotos] = useState<ArtworkPhoto[]>([]);
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+
 
   const [artwork, setArtwork] = useState<Artwork | null>(null);
 
@@ -177,24 +191,26 @@ export default function ArtworkDetail() {
   useEffect(() => {
     async function loadArtwork() {
       try {
-        const response = await fetch("/api/artworks");
+        const response = await fetch(`/api/artworks/${id}`);
 
-        const artworks = (await response.json()) as Artwork[];
+        if (!response.ok) {
+          setArtwork(null);
+          return;
+        }
 
-        const found = artworks.find((item) => item.id === Number(id));
+        const data = (await response.json()) as ArtworkDetailResponse;
 
-        setArtwork(found ?? null);
+        setArtwork(data.artwork);
+        setPhotos(data.photos ?? []);
+        setCurrentPhotoIndex(0);
 
-        if (found) {
-          const checkinResponse = await fetch(
-            `/api/artworks/${found.id}/checkin`,
-          );
+        const checkinResponse = await fetch(
+          `/api/artworks/${data.artwork.id}/checkin`,
+        );
 
-          if (checkinResponse.ok) {
-            const checkinData = await checkinResponse.json();
-
-            setCheckedIn(Boolean(checkinData.checked_in));
-          }
+        if (checkinResponse.ok) {
+          const checkinData = await checkinResponse.json();
+          setCheckedIn(Boolean(checkinData.checked_in));
         }
       } finally {
         setLoading(false);
@@ -203,6 +219,13 @@ export default function ArtworkDetail() {
 
     loadArtwork();
   }, [id]);
+
+  useEffect(() => {
+    photos.forEach((photo) => {
+      const image = new Image();
+      image.src = `/api/images/${photo.storage_key}`;
+    });
+  }, [photos]);
 
   useEffect(() => {
     if (!artwork) {
@@ -327,12 +350,49 @@ export default function ArtworkDetail() {
       <main className="detail-main">
         <section className="detail-hero">
           <div className="detail-photo-wrap">
-            {artwork.primary_photo && (
-              <img
-                src={`/api/images/${artwork.primary_photo}`}
-                alt={getArtworkDisplayTitle(artwork)}
-                className="detail-photo"
-              />
+            {photos.length > 0 && (
+              <div className="detail-gallery">
+                <img
+                  src={`/api/images/${photos[currentPhotoIndex].storage_key}`}
+                  alt={getArtworkDisplayTitle(artwork)}
+                  className="detail-photo"
+                />
+
+                {photos.length > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      className="gallery-button gallery-button-prev"
+                      aria-label="Previous photo"
+                      onClick={() =>
+                        setCurrentPhotoIndex((current) =>
+                          current === 0 ? photos.length - 1 : current - 1,
+                        )
+
+                      }
+                    >
+                      ‹
+                    </button>
+
+                    <button
+                      type="button"
+                      className="gallery-button gallery-button-next"
+                      aria-label="Next photo"
+                      onClick={() =>
+                        setCurrentPhotoIndex((current) =>
+                          current === photos.length - 1 ? 0 : current + 1,
+                        )
+                      }
+                    >
+                      ›
+                    </button>
+
+                    <div className="gallery-count">
+                      {currentPhotoIndex + 1} / {photos.length}
+                    </div>
+                  </>
+                )}
+              </div>
             )}
           </div>
 
@@ -344,9 +404,9 @@ export default function ArtworkDetail() {
             <h1>{artwork.title?.trim() || "Utility cabinet"}</h1>
 
             <ArtistAttribution
-  artistName={artwork.artist_name}
-  instagramHandle={artwork.instagram_handle}
-/>
+              artistName={artwork.artist_name}
+              instagramHandle={artwork.instagram_handle}
+            />
 
             <p className="detail-meta">
               {artwork.infrastructure_type}

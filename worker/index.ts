@@ -459,62 +459,134 @@ export default {
     }
     if (url.pathname === "/api/artists" && request.method === "GET") {
       const result = await env.DB.prepare(`
-        SELECT
-          artists.id,
-          artists.name,
-          artists.instagram_handle,
-          artists.website_url,
-          artists.bio,
-          artists.created_at,
-          COUNT(artworks.id) AS artwork_count,
-          (
-            SELECT photos.storage_key
-            FROM artworks AS representative_artwork
-            LEFT JOIN photos
-              ON photos.artwork_id = representative_artwork.id
-              AND photos.is_primary = 1
-            WHERE representative_artwork.artist_id = artists.id
-              AND photos.storage_key IS NOT NULL
-            ORDER BY representative_artwork.created_at DESC
-            LIMIT 1
-          ) AS primary_photo
-        FROM artists
-        LEFT JOIN artworks
-          ON artworks.artist_id = artists.id
-        GROUP BY artists.id
-        HAVING COUNT(artworks.id) > 0
-        ORDER BY artists.name COLLATE NOCASE
-      `).all();
+    SELECT
+      artists.id,
+      artists.name,
+      artists.instagram_handle,
+      artists.website_url,
+      artists.bio,
+      artists.created_at,
+      COUNT(artworks.id) AS artwork_count,
+      (
+        SELECT photos.storage_key
+        FROM artworks AS representative_artwork
+        LEFT JOIN photos
+          ON photos.artwork_id = representative_artwork.id
+          AND photos.is_primary = 1
+        WHERE representative_artwork.artist_id = artists.id
+          AND photos.storage_key IS NOT NULL
+        ORDER BY representative_artwork.created_at DESC
+        LIMIT 1
+      ) AS primary_photo
+    FROM artists
+    LEFT JOIN artworks
+      ON artworks.artist_id = artists.id
+    GROUP BY artists.id
+    HAVING COUNT(artworks.id) > 0
+    ORDER BY artists.name COLLATE NOCASE
+  `).all();
 
-      return Response.json(result.results);
+      const unknownResult = await env.DB.prepare(`
+    SELECT
+      COUNT(artworks.id) AS artwork_count,
+      (
+        SELECT photos.storage_key
+        FROM artworks AS representative_artwork
+        LEFT JOIN photos
+          ON photos.artwork_id = representative_artwork.id
+          AND photos.is_primary = 1
+        WHERE representative_artwork.artist_id IS NULL
+          AND photos.storage_key IS NOT NULL
+        ORDER BY representative_artwork.created_at DESC
+        LIMIT 1
+      ) AS primary_photo
+    FROM artworks
+    WHERE artworks.artist_id IS NULL
+  `).first<{
+        artwork_count: number;
+        primary_photo: string | null;
+      }>();
+
+      const artists = [...result.results];
+
+      if (Number(unknownResult?.artwork_count ?? 0) > 0) {
+        artists.unshift({
+          id: "unknown",
+          name: "Artist unknown",
+          instagram_handle: null,
+          website_url: null,
+          bio: null,
+          created_at: null,
+          artwork_count: Number(unknownResult?.artwork_count ?? 0),
+          primary_photo: unknownResult?.primary_photo ?? null,
+        });
+      }
+
+      return Response.json(artists);
     }
 
     const artistDetailMatch = url.pathname.match(
-      /^\/api\/artists\/(\d+)$/,
+      /^\/api\/artists\/([^/]+)$/,
     );
 
     if (artistDetailMatch && request.method === "GET") {
-      const artistId = Number(artistDetailMatch[1]);
+      const artistId = artistDetailMatch[1];
 
+      if (artistId === "unknown") {
+        const artworks = await env.DB.prepare(`
+      SELECT
+        artworks.id,
+        artworks.title,
+        artworks.description,
+        artworks.latitude,
+        artworks.longitude,
+        artworks.town,
+        artworks.city,
+        artworks.infrastructure_type,
+        artworks.status,
+        artworks.artist_id,
+        artworks.created_at,
+        photos.storage_key AS primary_photo
+      FROM artworks
+      LEFT JOIN photos
+        ON photos.artwork_id = artworks.id
+        AND photos.is_primary = 1
+      WHERE artworks.artist_id IS NULL
+      ORDER BY artworks.created_at DESC
+    `).all();
+
+        return Response.json({
+          artist: {
+            id: "unknown",
+            name: "Artist unknown",
+            instagram_handle: null,
+            website_url: null,
+            bio: null,
+            created_at: null,
+          },
+          artworks: artworks.results,
+        });
+      }
+
+      const numericArtistId = Number(artistId);
       const artist = await env.DB.prepare(`
-        SELECT
-          id,
-          name,
-          instagram_handle,
-          website_url,
-          bio,
-          created_at
-        FROM artists
-        WHERE id = ?
-      `)
-        .bind(artistId)
+  SELECT
+    id,
+    name,
+    instagram_handle,
+    website_url,
+    bio,
+    created_at
+  FROM artists
+  WHERE id = ?
+`)
+        .bind(numericArtistId)
         .first();
 
       if (!artist) {
-        return Response.json(
-          { error: "Artist not found" },
-          { status: 404 },
-        );
+        return new Response("Artist not found", {
+          status: 404,
+        });
       }
 
       const artworks = await env.DB.prepare(`
@@ -538,7 +610,7 @@ artworks.created_at,
         WHERE artworks.artist_id = ?
         ORDER BY artworks.created_at DESC
       `)
-        .bind(artistId)
+        .bind(numericArtistId)
         .all();
 
       return Response.json({
@@ -587,6 +659,78 @@ photos.created_at AS photo_added_at
 
       return Response.json(result.results);
     }
+
+    const artworkDetailMatch = url.pathname.match(
+  /^\/api\/artworks\/(\d+)$/,
+);
+
+if (artworkDetailMatch && request.method === "GET") {
+  const artworkId = Number(artworkDetailMatch[1]);
+
+  const artwork = await env.DB.prepare(`
+    SELECT
+      artworks.id,
+      artworks.title,
+      artworks.description,
+      artworks.latitude,
+      artworks.longitude,
+      artworks.town,
+      artworks.city,
+      artworks.infrastructure_type,
+      artworks.status,
+      artworks.artist_id,
+      artworks.created_at,
+
+      (
+        SELECT COUNT(DISTINCT checkins.user_id)
+        FROM checkins
+        WHERE checkins.artwork_id = artworks.id
+      ) AS checkin_count,
+
+      (
+        SELECT MAX(checkins.checked_in_at)
+        FROM checkins
+        WHERE checkins.artwork_id = artworks.id
+      ) AS last_checkin_at,
+
+      artists.name AS artist_name,
+      artists.instagram_handle
+
+    FROM artworks
+    LEFT JOIN artists
+      ON artworks.artist_id = artists.id
+    WHERE artworks.id = ?
+    LIMIT 1
+  `)
+    .bind(artworkId)
+    .first();
+
+  if (!artwork) {
+    return Response.json(
+      { error: "Artwork not found" },
+      { status: 404 },
+    );
+  }
+
+  const photos = await env.DB.prepare(`
+    SELECT
+      id,
+      storage_key,
+      is_primary,
+      created_at
+    FROM photos
+    WHERE artwork_id = ?
+    ORDER BY is_primary DESC, id ASC
+  `)
+    .bind(artworkId)
+    .all();
+
+  return Response.json({
+    artwork,
+    photos: photos.results,
+  });
+}
+
     const artworkEditMatch = url.pathname.match(
       /^\/api\/artworks\/(\d+)$/,
     );
