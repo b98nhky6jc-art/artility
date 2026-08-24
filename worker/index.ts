@@ -12,6 +12,67 @@ const ALLOWED_IMAGE_TYPES = new Set([
   "image/webp",
 ]);
 
+function createVerificationLandingResponse(
+  authResponse: Response,
+  requestUrl: URL,
+  errorCode: string | null,
+) {
+  const destination = new URL("/verify-email", requestUrl);
+
+  if (errorCode) {
+    destination.searchParams.set("error", errorCode);
+  } else {
+    destination.searchParams.set("verified", "1");
+  }
+
+  const destinationUrl = destination.toString();
+  const escapedDestination = destinationUrl
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;");
+  const title = errorCode ? "Verification link problem" : "Email verified";
+  const message = errorCode
+    ? "We could not verify this link. Returning to Artility so you can request a new one."
+    : "Your email has been verified. Returning to Artility…";
+  const headers = new Headers(authResponse.headers);
+
+  headers.delete("content-length");
+  headers.delete("location");
+  headers.set("cache-control", "no-store");
+  headers.set("content-type", "text/html; charset=utf-8");
+  headers.set(
+    "content-security-policy",
+    "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+  );
+
+  return new Response(
+    `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="refresh" content="0;url=${escapedDestination}">
+    <title>${title} · Artility</title>
+    <style>
+      :root { color-scheme: light; font-family: "Century Gothic", "Trebuchet MS", sans-serif; }
+      body { min-height: 100vh; margin: 0; display: grid; place-items: center; background: #f3ead5; color: #082b50; }
+      main { width: min(520px, calc(100% - 40px)); padding: 32px; border: 1px solid #d99a2b; border-radius: 24px; background: #fff8e8; text-align: center; }
+      h1 { margin: 0 0 12px; font-size: clamp(32px, 7vw, 48px); }
+      p { margin: 0; color: #5f584a; line-height: 1.6; }
+      a { display: inline-block; margin-top: 22px; color: #082b50; font-weight: 800; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>${title}</h1>
+      <p>${message}</p>
+      <a href="${escapedDestination}">Continue to Artility</a>
+    </main>
+  </body>
+</html>`,
+    { status: 200, headers },
+  );
+}
+
 export default {
   async fetch(
     request: Request,
@@ -68,6 +129,40 @@ export default {
       }
 
       return { ok: true, userId: session.user.id };
+    }
+
+    if (
+      url.pathname === "/api/auth/verify-email" &&
+      request.method === "GET"
+    ) {
+      const authResponse = await auth.handler(request);
+      const redirectLocation = authResponse.headers.get("location");
+      let errorCode: string | null = null;
+
+      if (redirectLocation) {
+        const redirectUrl = new URL(redirectLocation, request.url);
+        errorCode = redirectUrl.searchParams.get("error");
+      } else if (!authResponse.ok) {
+        try {
+          const errorBody = (await authResponse.clone().json()) as {
+            code?: string;
+          };
+          errorCode = errorBody.code ?? "VERIFICATION_FAILED";
+        } catch {
+          errorCode = "VERIFICATION_FAILED";
+        }
+      }
+
+      const safeErrorCode = errorCode
+        ? errorCode.replace(/[^a-z0-9_-]/gi, "").slice(0, 80) ||
+          "VERIFICATION_FAILED"
+        : null;
+
+      return createVerificationLandingResponse(
+        authResponse,
+        url,
+        safeErrorCode,
+      );
     }
 
     if (url.pathname.startsWith("/api/auth/")) {
