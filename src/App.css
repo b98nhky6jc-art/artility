@@ -2613,6 +2613,7 @@ main {
 }
 
 .verification-notice {
+  width: 100%;
   display: grid;
   gap: 18px;
   padding: 22px;
@@ -2622,12 +2623,22 @@ main {
   color: #30230b;
 }
 
-.verification-notice strong {
-  color: #211704;
+.verification-copy {
+  min-width: 0;
 }
 
-.verification-notice p {
+.verification-title {
+  display: block;
+  color: #211704;
+  font-size: 18px;
+  line-height: 1.3;
+}
+
+.verification-notice .verification-text {
+  max-width: none;
   margin: 6px 0 0;
+  color: #5f584a;
+  font-size: 15px;
   line-height: 1.55;
 }
 
@@ -2643,8 +2654,27 @@ main {
   gap: 12px;
 }
 
-.verification-notice-actions .secondary-button {
+.verification-button {
+  min-height: 44px;
+  padding: 11px 17px;
+  border: 1px solid var(--ink);
+  border-radius: var(--radius-pill);
+  background: var(--ink);
+  color: var(--cream);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
   white-space: nowrap;
+  cursor: pointer;
+}
+
+.verification-button:hover:not(:disabled) {
+  background: #16446f;
+}
+
+.verification-button:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 
 .verification-notice .form-error {
@@ -2658,6 +2688,20 @@ main {
 
 .verification-page {
   max-width: 680px;
+}
+
+.auth-panel.verification-page h1 {
+  font-size: clamp(42px, 6vw, 56px);
+  letter-spacing: -2px;
+}
+
+.verification-page > .auth-footer {
+  margin: 20px 0 0;
+}
+
+.profile-verification {
+  min-width: 0;
+  grid-column: 1 / -1;
 }
 
 .verification-page-actions {
@@ -2679,5 +2723,9 @@ main {
 
   .verification-notice-compact {
     grid-template-columns: 1fr;
+  }
+
+  .profile-verification {
+    grid-column: 1;
   }
 }
