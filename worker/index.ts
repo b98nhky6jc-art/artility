@@ -10,10 +10,14 @@ const ALLOWED_IMAGE_TYPES = new Set([
 ]);
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(
+    request: Request,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<Response> {
     const url = new URL(request.url);
 
-    const auth = createAuth(env);
+    const auth = createAuth(env, ctx);
 
     async function getCurrentUserId() {
       const session = await auth.api.getSession({
@@ -23,6 +27,41 @@ export default {
       return session?.user?.id ?? null;
     }
 
+    async function requireVerifiedUser(): Promise<
+      | { ok: true; userId: string }
+      | { ok: false; response: Response }
+    > {
+      const session = await auth.api.getSession({
+        headers: request.headers,
+      });
+
+      if (!session?.user) {
+        return {
+          ok: false,
+          response: Response.json(
+            { error: "Not signed in", code: "NOT_SIGNED_IN" },
+            { status: 401 },
+          ),
+        };
+      }
+
+      if (!session.user.emailVerified) {
+        return {
+          ok: false,
+          response: Response.json(
+            {
+              error:
+                "Verify your email to upload artwork, edit details, or check in.",
+              code: "EMAIL_VERIFICATION_REQUIRED",
+            },
+            { status: 403 },
+          ),
+        };
+      }
+
+      return { ok: true, userId: session.user.id };
+    }
+
     if (url.pathname.startsWith("/api/auth/")) {
       return auth.handler(request);
     }
@@ -30,14 +69,13 @@ export default {
     if (url.pathname === "/api/artworks" && request.method === "POST") {
       try {
 
-        const userId = await getCurrentUserId();
+        const access = await requireVerifiedUser();
 
-        if (!userId) {
-          return Response.json(
-            { error: "Not signed in" },
-            { status: 401 }
-          );
+        if (!access.ok) {
+          return access.response;
         }
+
+        const userId = access.userId;
         const formData = await request.formData();
 
         const title =
@@ -737,14 +775,13 @@ if (artworkDetailMatch && request.method === "GET") {
 
     if (artworkEditMatch && request.method === "PATCH") {
       try {
-        const userId = await getCurrentUserId();
+        const access = await requireVerifiedUser();
 
-        if (!userId) {
-          return Response.json(
-            { error: "Not signed in" },
-            { status: 401 },
-          );
+        if (!access.ok) {
+          return access.response;
         }
+
+        const userId = access.userId;
 
         const artworkId = Number(artworkEditMatch[1]);
 
@@ -1148,14 +1185,13 @@ artists.name AS artist_name,
 
     if (artworkPhotosMatch && request.method === "POST") {
       try {
-        const userId = await getCurrentUserId();
+        const access = await requireVerifiedUser();
 
-        if (!userId) {
-          return Response.json(
-            { error: "Not signed in" },
-            { status: 401 }
-          );
+        if (!access.ok) {
+          return access.response;
         }
+
+        const userId = access.userId;
 
         const artworkId = Number(artworkPhotosMatch[1]);
 
@@ -1340,14 +1376,13 @@ artists.name AS artist_name,
     }
     if (checkinMatch && request.method === "POST") {
       const artworkId = Number(checkinMatch[1]);
-      const userId = await getCurrentUserId();
+      const access = await requireVerifiedUser();
 
-      if (!userId) {
-        return Response.json(
-          { error: "Not signed in" },
-          { status: 401 }
-        );
+      if (!access.ok) {
+        return access.response;
       }
+
+      const userId = access.userId;
 
       const artwork = await env.DB.prepare(`
         SELECT id
@@ -1392,14 +1427,13 @@ artists.name AS artist_name,
       }
 
       const artworkId = Number(checkinMatch[1]);
-      const userId = await getCurrentUserId();
+      const access = await requireVerifiedUser();
 
-      if (!userId) {
-        return Response.json(
-          { error: "Not signed in" },
-          { status: 401 }
-        );
+      if (!access.ok) {
+        return access.response;
       }
+
+      const userId = access.userId;
 
       await env.DB.prepare(`
         DELETE FROM checkins
