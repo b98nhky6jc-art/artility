@@ -5,6 +5,7 @@ import "./App.css";
 import { getArtworkDisplayTitle } from "./artworkDisplay";
 import ArtistAttribution from "./ArtistAttribution";
 import { authClient } from "./lib/auth-client";
+import EmailVerificationNotice from "./EmailVerificationNotice";
 
 
 type Artwork = {
@@ -90,8 +91,13 @@ export default function ArtworkDetail() {
 
   const [distanceMetres, setDistanceMetres] = useState<number | null>(null);
 
-  const [locationError, setLocationError] = useState("");
+  const [locationError, setLocationError] = useState(() =>
+    navigator.geolocation
+      ? ""
+      : "Location is not supported by this browser.",
+  );
   const { data: session } = authClient.useSession();
+  const isEmailVerified = Boolean(session?.user?.emailVerified);
 
   const [editing, setEditing] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -233,7 +239,6 @@ export default function ArtworkDetail() {
     }
 
     if (!navigator.geolocation) {
-      setLocationError("Location is not supported by this browser.");
       return;
     }
 
@@ -274,7 +279,10 @@ export default function ArtworkDetail() {
           : "far";
 
   const canCheckIn =
-    !checkedIn && !checkingIn && (withinCheckinRadius || isLocalhost);
+    isEmailVerified &&
+    !checkedIn &&
+    !checkingIn &&
+    (withinCheckinRadius || isLocalhost);
 
   async function handleCheckin() {
     if (!artwork || !canCheckIn) {
@@ -412,7 +420,11 @@ export default function ArtworkDetail() {
               {artwork.infrastructure_type}
               {artwork.city ? ` · ${artwork.city}` : ""}
             </p>
-            {session?.user && !editing && (
+            {session?.user && !session.user.emailVerified && (
+              <EmailVerificationNotice email={session.user.email} compact />
+            )}
+
+            {session?.user?.emailVerified && !editing && (
               <button
                 type="button"
                 className="edit-details-button"
@@ -599,11 +611,15 @@ export default function ArtworkDetail() {
                 ? "Checking in…"
                 : checkedIn
                   ? "✓ You checked in"
-                  : withinCheckinRadius
-                    ? "Check in here"
-                    : isLocalhost
-                      ? "Check in here (dev)"
-                      : "🔒 Get closer to check in"}
+                  : !session?.user
+                    ? "🔒 Sign in to check in"
+                    : !isEmailVerified
+                      ? "Verify email to check in"
+                      : withinCheckinRadius
+                        ? "Check in here"
+                        : isLocalhost
+                          ? "Check in here (dev)"
+                          : "🔒 Get closer to check in"}
             </button>
 
             {checkedIn && (
