@@ -1,12 +1,14 @@
 import { Link, useSearchParams } from "react-router";
 import EmailVerificationNotice from "./EmailVerificationNotice";
 import { authClient } from "./lib/auth-client";
+import { canUserContribute } from "./emailVerification";
 import "./App.css";
 
 export default function VerifyEmail() {
   const { data: session, isPending } = authClient.useSession();
   const [searchParams] = useSearchParams();
   const verificationError = searchParams.get("error");
+  const canContribute = canUserContribute(session?.user);
 
   return (
     <div className="detail-shell">
@@ -24,9 +26,13 @@ export default function VerifyEmail() {
 
           {isPending ? (
             <p>Checking your email status…</p>
-          ) : session?.user?.emailVerified ? (
+          ) : session?.user && canContribute ? (
             <>
-              <h1>Email verified</h1>
+              <h1>
+                {session.user.emailVerified
+                  ? "Email verified"
+                  : "Account ready"}
+              </h1>
               <p>
                 You can now upload artwork, edit details and check in when
                 you’re nearby.
