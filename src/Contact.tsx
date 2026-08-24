@@ -16,7 +16,7 @@ export default function Contact() {
         <section className="contact-panel">
           <span className="eyebrow">GET IN TOUCH</span>
 
-          <h1>Contact</h1>
+          <h1>Contact Artility</h1>
 
           <p className="contact-intro">
             Found something wrong, know who painted an artwork, or just want
@@ -56,8 +56,8 @@ export default function Contact() {
             <span className="eyebrow">EMAIL</span>
 
             <p>
-              <a href="mailto:YOUR_EMAIL_ADDRESS">
-                YOUR_EMAIL_ADDRESS
+              <a href="mailto:hello@artility.co.uk">
+                hello@artility.co.uk
               </a>
             </p>
           </div>
