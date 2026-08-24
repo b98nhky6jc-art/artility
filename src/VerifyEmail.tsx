@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link, useSearchParams } from "react-router";
 import EmailVerificationNotice from "./EmailVerificationNotice";
 import { authClient } from "./lib/auth-client";
@@ -5,10 +6,17 @@ import { canUserContribute } from "./emailVerification";
 import "./App.css";
 
 export default function VerifyEmail() {
-  const { data: session, isPending } = authClient.useSession();
+  const { data: session, isPending, refetch } = authClient.useSession();
   const [searchParams] = useSearchParams();
   const verificationError = searchParams.get("error");
+  const verificationCompleted = searchParams.get("verified") === "1";
   const canContribute = canUserContribute(session?.user);
+
+  useEffect(() => {
+    if (verificationCompleted) {
+      void refetch({ query: { disableCookieCache: true } });
+    }
+  }, [refetch, verificationCompleted]);
 
   return (
     <div className="detail-shell">
