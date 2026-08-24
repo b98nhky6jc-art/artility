@@ -22,7 +22,7 @@ async function deliverVerificationEmail(
       "user-agent": "artility-worker/1.0",
     },
     body: JSON.stringify({
-      from: "Artility <hello@artility.co.uk>",
+      from: "Artility <verify@send.artility.co.uk>",
       to: [email],
       subject: "Verify your Artility email",
       text: [
@@ -68,9 +68,21 @@ export function createAuth(env: Env, ctx: ExecutionContext) {
     emailVerification: {
       sendOnSignUp: true,
       expiresIn: 60 * 60,
-      sendVerificationEmail: async ({ user, url }) => {
+      sendVerificationEmail: async ({ user, url }, request) => {
+        const delivery = deliverVerificationEmail(env, user.email, url);
+
+        if (
+          request &&
+          new URL(request.url).pathname.endsWith(
+            "/send-verification-email",
+          )
+        ) {
+          await delivery;
+          return;
+        }
+
         ctx.waitUntil(
-          deliverVerificationEmail(env, user.email, url).catch((error) => {
+          delivery.catch((error) => {
             console.error("Verification email delivery failed:", error);
           }),
         );
