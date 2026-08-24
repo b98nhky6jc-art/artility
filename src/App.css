@@ -2604,3 +2604,80 @@ main {
 .detail-gallery {
   overflow: hidden;
 }
+
+
+/* Email verification */
+.page-verification-banner {
+  width: min(1180px, calc(100% - 40px));
+  margin: 18px auto 0;
+}
+
+.verification-notice {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid #d99a2b;
+  border-radius: 18px;
+  background: #fff8e8;
+  color: #30230b;
+}
+
+.verification-notice strong {
+  color: #211704;
+}
+
+.verification-notice p {
+  margin: 6px 0 0;
+  line-height: 1.55;
+}
+
+.verification-notice-compact {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.verification-notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.verification-notice-actions .secondary-button {
+  white-space: nowrap;
+}
+
+.verification-notice .form-error {
+  margin: 0;
+}
+
+.verification-success {
+  color: #25633f;
+  font-weight: 700;
+}
+
+.verification-page {
+  max-width: 680px;
+}
+
+.verification-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.verification-page-actions a {
+  text-decoration: none;
+}
+
+@media (max-width: 700px) {
+  .page-verification-banner {
+    width: min(100% - 24px, 1180px);
+    margin-top: 12px;
+  }
+
+  .verification-notice-compact {
+    grid-template-columns: 1fr;
+  }
+}
