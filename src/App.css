@@ -2654,6 +2654,14 @@ main {
   gap: 12px;
 }
 
+.verification-notice:not(.verification-notice-compact) .verification-notice-actions {
+  justify-content: center;
+}
+
+.verification-notice-compact .verification-notice-actions {
+  justify-content: flex-end;
+}
+
 .verification-button {
   min-height: 44px;
   padding: 11px 17px;
@@ -2723,6 +2731,10 @@ main {
 
   .verification-notice-compact {
     grid-template-columns: 1fr;
+  }
+
+  .verification-notice-compact .verification-notice-actions {
+    justify-content: flex-start;
   }
 
   .profile-verification {
