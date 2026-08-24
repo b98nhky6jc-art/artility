@@ -6,6 +6,7 @@ import { getArtworkDisplayTitle } from "./artworkDisplay";
 import ArtistAttribution from "./ArtistAttribution";
 import { authClient } from "./lib/auth-client";
 import EmailVerificationNotice from "./EmailVerificationNotice";
+import { canUserContribute } from "./emailVerification";
 
 
 type Artwork = {
@@ -97,7 +98,7 @@ export default function ArtworkDetail() {
       : "Location is not supported by this browser.",
   );
   const { data: session } = authClient.useSession();
-  const isEmailVerified = Boolean(session?.user?.emailVerified);
+  const canContribute = canUserContribute(session?.user);
 
   const [editing, setEditing] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -279,7 +280,7 @@ export default function ArtworkDetail() {
           : "far";
 
   const canCheckIn =
-    isEmailVerified &&
+    canContribute &&
     !checkedIn &&
     !checkingIn &&
     (withinCheckinRadius || isLocalhost);
@@ -420,11 +421,11 @@ export default function ArtworkDetail() {
               {artwork.infrastructure_type}
               {artwork.city ? ` · ${artwork.city}` : ""}
             </p>
-            {session?.user && !session.user.emailVerified && (
+            {session?.user && !canContribute && (
               <EmailVerificationNotice email={session.user.email} compact />
             )}
 
-            {session?.user?.emailVerified && !editing && (
+            {canContribute && !editing && (
               <button
                 type="button"
                 className="edit-details-button"
@@ -613,7 +614,7 @@ export default function ArtworkDetail() {
                   ? "✓ You checked in"
                   : !session?.user
                     ? "🔒 Sign in to check in"
-                    : !isEmailVerified
+                    : !canContribute
                       ? "Verify email to check in"
                       : withinCheckinRadius
                         ? "Check in here"
