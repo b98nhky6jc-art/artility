@@ -5,6 +5,7 @@ import ArtworkMap from "./ArtworkMap";
 import { authClient } from "./lib/auth-client";
 import { getArtworkDisplayTitle } from "./artworkDisplay";
 import ArtistAttribution from "./ArtistAttribution";
+import EmailVerificationNotice from "./EmailVerificationNotice";
 
 
 type Artwork = {
@@ -98,6 +99,12 @@ function App() {
           )}
         </nav>
       </header>
+
+      {session?.user && !session.user.emailVerified && (
+        <div className="page-verification-banner">
+          <EmailVerificationNotice email={session.user.email} compact />
+        </div>
+      )}
 
       <main>
         <section className="hero" id="map">
