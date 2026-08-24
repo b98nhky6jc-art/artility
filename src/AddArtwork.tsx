@@ -6,6 +6,7 @@ import LibRaw from "libraw-wasm";
 import { getArtworkDisplayTitle } from "./artworkDisplay";
 import { authClient } from "./lib/auth-client";
 import EmailVerificationNotice from "./EmailVerificationNotice";
+import { canUserContribute } from "./emailVerification";
 
 type Stage = "upload" | "review";
 type NearbyArtwork = {
@@ -247,6 +248,7 @@ const MAX_PHOTOS_PER_ARTWORK = 3;
 export default function AddArtwork() {
   const navigate = useNavigate();
   const { data: session, isPending } = authClient.useSession();
+  const canContribute = canUserContribute(session?.user);
 
 
   useEffect(() => {
@@ -506,7 +508,7 @@ export default function AddArtwork() {
 
       <main className="detail-main">
         <section className="add-artwork-panel">
-          {session?.user && !session.user.emailVerified && (
+          {session?.user && !canContribute && (
             <>
               <span className="eyebrow">VERIFICATION REQUIRED</span>
               <h1>Add artwork</h1>
@@ -514,7 +516,7 @@ export default function AddArtwork() {
             </>
           )}
 
-          {session?.user?.emailVerified && stage === "upload" && (
+          {canContribute && stage === "upload" && (
             <>
               <span className="eyebrow">CONTRIBUTE</span>
 
@@ -563,7 +565,7 @@ export default function AddArtwork() {
             </>
           )}
 
-          {session?.user?.emailVerified && stage === "review" && (
+          {canContribute && stage === "review" && (
             <>
               <span className="eyebrow">CHECK THE DETAILS</span>
 
