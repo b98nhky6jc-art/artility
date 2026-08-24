@@ -47,9 +47,11 @@ export default function EmailVerificationNotice({
       role="status"
       aria-live="polite"
     >
-      <div>
-        <strong>Verify your email to contribute</strong>
-        <p>
+      <div className="verification-copy">
+        <strong className="verification-title">
+          Verify your email to contribute
+        </strong>
+        <p className="verification-text">
           You can keep browsing, but uploads, edits and check-ins require a
           verified email. We sent a link to <strong>{email}</strong>.
         </p>
@@ -58,7 +60,7 @@ export default function EmailVerificationNotice({
       <div className="verification-notice-actions">
         <button
           type="button"
-          className="secondary-button"
+          className="verification-button"
           onClick={resendVerification}
           disabled={sending}
         >
