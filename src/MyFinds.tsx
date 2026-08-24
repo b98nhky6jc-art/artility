@@ -4,6 +4,7 @@ import "./App.css";
 import { authClient } from "./lib/auth-client";
 import { getArtworkDisplayTitle } from "./artworkDisplay";
 import ArtistAttribution from "./ArtistAttribution";
+import EmailVerificationNotice from "./EmailVerificationNotice";
 
 type Find = {
   instagram_handle: string | null;
@@ -89,6 +90,10 @@ export default function MyFinds() {
                   Sign out
                 </button>
               </div>
+            )}
+
+            {session?.user && !session.user.emailVerified && (
+              <EmailVerificationNotice email={session.user.email} compact />
             )}
           </div>
 
