@@ -5,6 +5,7 @@ import { authClient } from "./lib/auth-client";
 import { getArtworkDisplayTitle } from "./artworkDisplay";
 import ArtistAttribution from "./ArtistAttribution";
 import EmailVerificationNotice from "./EmailVerificationNotice";
+import { canUserContribute } from "./emailVerification";
 
 type Find = {
   instagram_handle: string | null;
@@ -24,6 +25,7 @@ export default function MyFinds() {
   const [finds, setFinds] = useState<Find[]>([]);
   const [loading, setLoading] = useState(true);
   const { data: session } = authClient.useSession();
+  const canContribute = canUserContribute(session?.user);
 
   useEffect(() => {
     async function loadFinds() {
@@ -92,9 +94,6 @@ export default function MyFinds() {
               </div>
             )}
 
-            {session?.user && !session.user.emailVerified && (
-              <EmailVerificationNotice email={session.user.email} compact />
-            )}
           </div>
 
           <div className="profile-stats">
@@ -123,6 +122,12 @@ export default function MyFinds() {
               <span>Latest find</span>
             </div>
           </div>
+
+          {session?.user && !canContribute && (
+            <div className="profile-verification">
+              <EmailVerificationNotice email={session.user.email} compact />
+            </div>
+          )}
         </section>
 
         <section className="collection-section">
