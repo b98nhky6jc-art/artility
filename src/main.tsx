@@ -13,6 +13,7 @@ import MobileNav from "./MobileNav.tsx";
 import Contact from "./Contact.tsx";
 import Artists from "./Artists.tsx";
 import ArtistDetail from "./ArtistDetail.tsx";
+import VerifyEmail from "./VerifyEmail.tsx";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -25,6 +26,7 @@ createRoot(document.getElementById("root")!).render(
         <Route path="/my-finds" element={<MyFinds />} />
         <Route path="/add-artwork" element={<AddArtwork />} />
         <Route path="/contact" element={<Contact />} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="/artists" element={<Artists />} />
 <Route path="/artist/:id" element={<ArtistDetail />} />
       </Routes>
