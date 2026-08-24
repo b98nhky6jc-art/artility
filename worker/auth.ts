@@ -67,6 +67,7 @@ export function createAuth(env: Env, ctx: ExecutionContext) {
 
     emailVerification: {
       sendOnSignUp: true,
+      autoSignInAfterVerification: true,
       expiresIn: 60 * 60,
       sendVerificationEmail: async ({ user, url }, request) => {
         const delivery = deliverVerificationEmail(env, user.email, url);
