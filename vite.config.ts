@@ -48,6 +48,7 @@ export default defineConfig({
 
       workbox: {
         cleanupOutdatedCaches: true,
+        navigateFallbackDenylist: [/^\/api\//],
 
         runtimeCaching: [
           {
