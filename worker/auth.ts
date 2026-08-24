@@ -5,10 +5,48 @@ declare global {
   interface Env {
     GOOGLE_CLIENT_ID: string;
     GOOGLE_CLIENT_SECRET: string;
+    RESEND_API_KEY: string;
   }
 }
 
-export function createAuth(env: Env) {
+async function deliverVerificationEmail(
+  env: Env,
+  email: string,
+  verificationUrl: string,
+) {
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${env.RESEND_API_KEY}`,
+      "content-type": "application/json",
+      "user-agent": "artility-worker/1.0",
+    },
+    body: JSON.stringify({
+      from: "Artility <hello@artility.co.uk>",
+      to: [email],
+      subject: "Verify your Artility email",
+      text: [
+        "Welcome to Artility.",
+        "",
+        "Verify your email to upload artwork, edit details, and check in:",
+        verificationUrl,
+        "",
+        "You can still browse Artility before verifying.",
+        "",
+        "This link expires in one hour.",
+      ].join("\n"),
+    }),
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(
+      `Verification email delivery failed (${response.status}): ${details}`,
+    );
+  }
+}
+
+export function createAuth(env: Env, ctx: ExecutionContext) {
   return betterAuth({
     database: env.DB,
 
@@ -25,6 +63,18 @@ export function createAuth(env: Env) {
 
     emailAndPassword: {
       enabled: true,
+    },
+
+    emailVerification: {
+      sendOnSignUp: true,
+      expiresIn: 60 * 60,
+      sendVerificationEmail: async ({ user, url }) => {
+        ctx.waitUntil(
+          deliverVerificationEmail(env, user.email, url).catch((error) => {
+            console.error("Verification email delivery failed:", error);
+          }),
+        );
+      },
     },
 
     socialProviders: {
