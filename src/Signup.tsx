@@ -62,6 +62,7 @@ export default function Signup() {
         email: email.trim(),
         password,
         name: displayName.trim(),
+        callbackURL: "/verify-email",
       });
 
       if (result.error) {
@@ -69,7 +70,7 @@ export default function Signup() {
         return;
       }
 
-      navigate("/");
+      navigate("/verify-email");
     } catch (error) {
       console.error(error);
       setError("Could not create account.");
