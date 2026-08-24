@@ -3,6 +3,9 @@ import { createAuth } from "./auth.js";
 const MAX_PHOTOS_PER_ARTWORK = 3;
 
 const MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024;
+const EMAIL_VERIFICATION_CUTOFF = Date.parse(
+  "2026-08-24T22:10:00.000Z",
+);
 const ALLOWED_IMAGE_TYPES = new Set([
   "image/jpeg",
   "image/png",
@@ -45,7 +48,12 @@ export default {
         };
       }
 
-      if (!session.user.emailVerified) {
+      const createdAt = new Date(session.user.createdAt).getTime();
+      const isExistingUser =
+        Number.isFinite(createdAt) &&
+        createdAt < EMAIL_VERIFICATION_CUTOFF;
+
+      if (!session.user.emailVerified && !isExistingUser) {
         return {
           ok: false,
           response: Response.json(
