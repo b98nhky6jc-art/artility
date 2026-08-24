@@ -5,6 +5,7 @@ import "./App.css";
 import LibRaw from "libraw-wasm";
 import { getArtworkDisplayTitle } from "./artworkDisplay";
 import { authClient } from "./lib/auth-client";
+import EmailVerificationNotice from "./EmailVerificationNotice";
 
 type Stage = "upload" | "review";
 type NearbyArtwork = {
@@ -476,7 +477,10 @@ export default function AddArtwork() {
       });
 
       if (!response.ok) {
-        throw new Error(`API returned ${response.status}`);
+        const data = await response.json().catch(() => null);
+        throw new Error(
+          data?.error ?? `API returned ${response.status}`,
+        );
       }
 
       const artwork = await response.json();
@@ -502,7 +506,15 @@ export default function AddArtwork() {
 
       <main className="detail-main">
         <section className="add-artwork-panel">
-          {stage === "upload" && (
+          {session?.user && !session.user.emailVerified && (
+            <>
+              <span className="eyebrow">VERIFICATION REQUIRED</span>
+              <h1>Add artwork</h1>
+              <EmailVerificationNotice email={session.user.email} />
+            </>
+          )}
+
+          {session?.user?.emailVerified && stage === "upload" && (
             <>
               <span className="eyebrow">CONTRIBUTE</span>
 
@@ -551,7 +563,7 @@ export default function AddArtwork() {
             </>
           )}
 
-          {stage === "review" && (
+          {session?.user?.emailVerified && stage === "review" && (
             <>
               <span className="eyebrow">CHECK THE DETAILS</span>
 
