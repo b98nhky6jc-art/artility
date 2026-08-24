@@ -6,6 +6,7 @@ import { authClient } from "./lib/auth-client";
 import { getArtworkDisplayTitle } from "./artworkDisplay";
 import ArtistAttribution from "./ArtistAttribution";
 import EmailVerificationNotice from "./EmailVerificationNotice";
+import { canUserContribute } from "./emailVerification";
 
 
 type Artwork = {
@@ -29,6 +30,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const { data: session } = authClient.useSession();
+  const canContribute = canUserContribute(session?.user);
 
   useEffect(() => {
     async function loadArtworks() {
@@ -100,7 +102,7 @@ function App() {
         </nav>
       </header>
 
-      {session?.user && !session.user.emailVerified && (
+      {session?.user && !canContribute && (
         <div className="page-verification-banner">
           <EmailVerificationNotice email={session.user.email} compact />
         </div>
