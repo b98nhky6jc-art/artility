@@ -16,7 +16,7 @@ export default function Contact() {
         <section className="contact-panel">
           <span className="eyebrow">GET IN TOUCH</span>
 
-          <h1>Contact Artility</h1>
+          <h1>Contact</h1>
 
           <p className="contact-intro">
             Found something wrong, know who painted an artwork, or just want
