@@ -1714,6 +1714,10 @@ main {
   background: var(--soft-green);
 }
 
+.artwork-submission-processing {
+  background: var(--soft-green);
+}
+
 .artwork-submission-rejected {
   background: var(--warning-surface);
 }

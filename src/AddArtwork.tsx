@@ -14,7 +14,7 @@ import {
 } from "../shared/infrastructure-types";
 
 type Stage = "upload" | "review" | "submitted";
-type UploadModerationNotice = "review" | "rejected";
+type UploadModerationNotice = "processing" | "review" | "rejected";
 type SubmissionResult = {
   artworkId: number;
   moderation: UploadModerationNotice;
@@ -44,8 +44,12 @@ type UploadResponse = {
 function getUploadModerationNotice(data: UploadResponse) {
   const states = data.image_moderation?.map((item) => item.state) ?? [];
 
-  if (states.some((state) => state === "manual_review" || state === "pending")) {
+  if (states.some((state) => state === "manual_review")) {
     return "review" as const;
+  }
+
+  if (states.some((state) => state === "pending")) {
+    return "processing" as const;
   }
 
   if (states.some((state) => state === "rejected")) {
@@ -972,21 +976,39 @@ export default function AddArtwork() {
               <span className="eyebrow">SUBMISSION RECEIVED</span>
 
               <h1>
-                {submissionResult.moderation === "review"
-                  ? "Your artwork is awaiting review"
-                  : "This artwork wasn’t published"}
+                {submissionResult.moderation === "processing"
+                  ? "Your artwork is completing a safety check"
+                  : submissionResult.moderation === "review"
+                    ? "Your artwork is awaiting review"
+                    : "This artwork wasn’t published"}
               </h1>
 
               <div
                 className={`artwork-submission-message artwork-submission-${submissionResult.moderation}`}
               >
                 <span className="artwork-submission-badge">
-                  {submissionResult.moderation === "review"
-                    ? "Manual review"
-                    : "Image not approved"}
+                  {submissionResult.moderation === "processing"
+                    ? "Safety check pending"
+                    : submissionResult.moderation === "review"
+                      ? "Manual review"
+                      : "Image not approved"}
                 </span>
 
-                {submissionResult.moderation === "review" ? (
+                {submissionResult.moderation === "processing" ? (
+                  <>
+                    <h2>Your submission is saved safely.</h2>
+                    <p>
+                      The automated image check is temporarily unavailable, so
+                      Artility will retry it automatically. The image and
+                      artwork remain private while that happens.
+                    </p>
+                    <p>
+                      You do not need to submit it again. If the check cannot
+                      be completed after several attempts, a moderator will be
+                      notified to review it.
+                    </p>
+                  </>
+                ) : submissionResult.moderation === "review" ? (
                   <>
                     <h2>Your submission is saved safely.</h2>
                     <p>

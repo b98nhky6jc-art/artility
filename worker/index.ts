@@ -9,7 +9,10 @@ import {
   prepareImageUpload,
   type PreparedImage,
 } from "./image-processing.js";
-import { moderateImage } from "./image-moderation.js";
+import {
+  moderateImage,
+  type ImageModerationDecision,
+} from "./image-moderation.js";
 import { normaliseInfrastructureType } from "../shared/infrastructure-types.js";
 import {
   isUnknownArtistName,
@@ -20,6 +23,8 @@ import {
 } from "../shared/artist-identity.js";
 
 const MAX_PHOTOS_PER_ARTWORK = 3;
+const MAX_AUTOMATED_MODERATION_ATTEMPTS = 3;
+const MODERATION_RETRY_BATCH_SIZE = 5;
 const MAX_STATUS_REPORT_NOTE_LENGTH = 1000;
 const STATUS_REPORT_TYPES = new Set([
   "no_longer_there",
@@ -35,6 +40,22 @@ type ArtworkPhotoModerationState =
   | "approved"
   | "rejected"
   | "manual_review";
+
+function storedModerationState(
+  outcome: ImageModerationDecision["outcome"],
+): ArtworkPhotoModerationState {
+  if (outcome === "reject") {
+    return "rejected";
+  }
+
+  if (outcome === "manual_review") {
+    return "manual_review";
+  }
+
+  // Approved photos are published in a separate fail-closed step. Retryable
+  // provider failures remain quarantined as pending in the meantime.
+  return "pending";
+}
 
 type ResolvedArtist = {
   id: number;
@@ -288,6 +309,92 @@ async function publishArtworkPhoto(
   return { ...photo, storage_key: publicKey, thumbnail_key: publicThumbnailKey };
 }
 
+async function applyImageModerationDecision(
+  env: Env,
+  photoId: number,
+  decision: ImageModerationDecision,
+  previousAttemptCount: number,
+) {
+  const attemptCount = previousAttemptCount + 1;
+  const finalDecision: ImageModerationDecision =
+    decision.outcome === "retry" &&
+    attemptCount >= MAX_AUTOMATED_MODERATION_ATTEMPTS
+      ? {
+          ...decision,
+          outcome: "manual_review",
+          reason:
+            "The automated safety check remained unavailable after scheduled retries; moderator review is required.",
+        }
+      : decision;
+  const state = storedModerationState(finalDecision.outcome);
+  const update = await env.DB.prepare(`
+    UPDATE photos
+    SET moderation_state = ?,
+        moderation_provider = ?,
+        moderation_model = ?,
+        moderation_request_id = ?,
+        moderation_reason = ?,
+        moderation_categories = ?,
+        moderation_scores = ?,
+        moderation_attempt_count = moderation_attempt_count + 1,
+        moderation_last_error = ?
+    WHERE id = ?
+      AND moderation_state = 'pending'
+  `)
+    .bind(
+      state,
+      finalDecision.provider,
+      finalDecision.model,
+      finalDecision.requestId,
+      finalDecision.reason,
+      JSON.stringify(finalDecision.categories),
+      JSON.stringify(finalDecision.scores),
+      finalDecision.error,
+      photoId,
+    )
+    .run();
+
+  if (Number(update.meta.changes ?? 0) !== 1) {
+    throw new Error("This image changed state during automated moderation");
+  }
+
+  if (finalDecision.outcome !== "approve") {
+    return {
+      id: photoId,
+      state,
+      providerRetry: decision.outcome === "retry",
+    };
+  }
+
+  try {
+    await publishArtworkPhoto(env, photoId);
+    return {
+      id: photoId,
+      state: "approved" as const,
+      providerRetry: false,
+    };
+  } catch (error) {
+    await env.DB.prepare(`
+      UPDATE photos
+      SET moderation_state = 'manual_review',
+          moderation_reason = 'Publishing failed after automated approval.',
+          moderation_last_error = ?
+      WHERE id = ?
+        AND moderation_state = 'pending'
+    `)
+      .bind(
+        error instanceof Error ? error.message : "Unknown publish error",
+        photoId,
+      )
+      .run();
+    return {
+      id: photoId,
+      state: "manual_review" as const,
+      providerRetry: false,
+    };
+  }
+}
+
 async function quarantineAndModerateArtworkPhoto(
   env: Env,
   artworkId: number,
@@ -353,58 +460,163 @@ async function quarantineAndModerateArtworkPhoto(
   }
 
   const decision = await moderateImage(env.OPENAI_API_KEY, image);
-  const state: ArtworkPhotoModerationState =
-    decision.outcome === "approve"
-      ? "pending"
-      : decision.outcome === "reject"
-        ? "rejected"
-        : "manual_review";
 
-  await env.DB.prepare(`
-    UPDATE photos
-    SET moderation_state = ?,
-        moderation_provider = ?,
-        moderation_model = ?,
-        moderation_request_id = ?,
-        moderation_reason = ?,
-        moderation_categories = ?,
-        moderation_scores = ?,
-        moderation_attempt_count = moderation_attempt_count + 1,
-        moderation_last_error = ?
-    WHERE id = ?
-  `)
-    .bind(
-      state,
-      decision.provider,
-      decision.model,
-      decision.requestId,
-      decision.reason,
-      JSON.stringify(decision.categories),
-      JSON.stringify(decision.scores),
-      decision.error,
-      photoId,
+  return applyImageModerationDecision(env, photoId, decision, 0);
+}
+
+export async function retryPendingImageModeration(env: Env) {
+  const candidates = await env.DB.prepare(`
+    SELECT
+      id,
+      storage_key,
+      thumbnail_key,
+      moderation_state,
+      moderation_attempt_count,
+      stored_mime_type,
+      width,
+      height
+    FROM photos
+    WHERE (
+      moderation_state = 'pending'
+      AND moderation_attempt_count < ?
+      AND (
+        (
+          moderation_attempt_count <= 1
+          AND created_at <= datetime('now', '-10 minutes')
+        )
+        OR (
+          moderation_attempt_count = 2
+          AND created_at <= datetime('now', '-30 minutes')
+        )
+      )
     )
-    .run();
+    OR (
+      moderation_state = 'manual_review'
+      AND reviewed_at IS NULL
+      AND moderation_last_error LIKE 'OpenAI returned 429:%'
+    )
+    ORDER BY created_at ASC, id ASC
+    LIMIT ?
+  `)
+    .bind(MAX_AUTOMATED_MODERATION_ATTEMPTS, MODERATION_RETRY_BATCH_SIZE)
+    .all<{
+      id: number;
+      storage_key: string;
+      thumbnail_key: string | null;
+      moderation_state: ArtworkPhotoModerationState;
+      moderation_attempt_count: number;
+      stored_mime_type: string | null;
+      width: number | null;
+      height: number | null;
+    }>();
+  const result = {
+    checked: 0,
+    approved: 0,
+    rejected: 0,
+    deferred: 0,
+    manualReviewPhotoIds: [] as number[],
+  };
 
-  if (decision.outcome === "approve") {
-    try {
-      await publishArtworkPhoto(env, photoId);
-      return { id: photoId, state: "approved" as const };
-    } catch (error) {
-      await env.DB.prepare(`
+  for (const candidate of candidates.results) {
+    if (candidate.moderation_state === "manual_review") {
+      const restored = await env.DB.prepare(`
         UPDATE photos
-        SET moderation_state = 'manual_review',
-            moderation_reason = 'Publishing failed after automated approval.',
-            moderation_last_error = ?
+        SET moderation_state = 'pending',
+            moderation_reason =
+              'A previous provider throttle is being retried automatically while the image remains private.'
         WHERE id = ?
+          AND moderation_state = 'manual_review'
+          AND reviewed_at IS NULL
+          AND moderation_last_error LIKE 'OpenAI returned 429:%'
       `)
-        .bind(error instanceof Error ? error.message : "Unknown publish error", photoId)
+        .bind(candidate.id)
         .run();
-      return { id: photoId, state: "manual_review" as const };
+
+      if (Number(restored.meta.changes ?? 0) !== 1) {
+        continue;
+      }
+    }
+
+    result.checked += 1;
+    let thumbnail: R2ObjectBody | null = null;
+    let decision: ImageModerationDecision | null = null;
+
+    try {
+      thumbnail = candidate.thumbnail_key
+        ? await env.IMAGES.get(candidate.thumbnail_key)
+        : null;
+    } catch (error) {
+      decision = {
+        outcome: "retry",
+        provider: "openai",
+        model: "omni-moderation-latest",
+        requestId: null,
+        reason:
+          "The quarantined image could not be read temporarily and will retry while it remains private.",
+        categories: {},
+        scores: {},
+        error:
+          error instanceof Error
+            ? `R2 read failed: ${error.message}`
+            : "R2 read failed",
+      };
+    }
+
+    if (!decision && thumbnail === null) {
+      decision = {
+        outcome: "manual_review",
+        provider: "openai",
+        model: "omni-moderation-latest",
+        requestId: null,
+        reason:
+          "The quarantined moderation preview is unavailable; moderator review is required.",
+        categories: {},
+        scores: {},
+        error: "Quarantined thumbnail is missing from R2",
+      };
+    } else if (!decision && thumbnail) {
+      const thumbnailBytes = new Uint8Array(await thumbnail.arrayBuffer());
+      const retryImage: PreparedImage = {
+        bytes: thumbnailBytes,
+        thumbnailBytes,
+        sourceMimeType: "image/jpeg",
+        storedMimeType: "image/jpeg",
+        width: candidate.width ?? 1,
+        height: candidate.height ?? 1,
+      };
+
+      decision = await moderateImage(env.OPENAI_API_KEY, retryImage);
+    }
+
+    if (!decision) {
+      throw new Error("The moderation retry did not produce a decision");
+    }
+
+    const applied = await applyImageModerationDecision(
+      env,
+      candidate.id,
+      decision,
+      candidate.moderation_attempt_count,
+    );
+
+    if (applied.state === "approved") {
+      result.approved += 1;
+    } else if (applied.state === "rejected") {
+      result.rejected += 1;
+    } else if (applied.state === "manual_review") {
+      result.manualReviewPhotoIds.push(candidate.id);
+    } else {
+      result.deferred += 1;
+    }
+
+    // Once the provider says it is throttled/unavailable, do not burn through
+    // the rest of the queue in the same scheduled invocation.
+    if (applied.providerRetry) {
+      break;
     }
   }
 
-  return { id: photoId, state };
+  return result;
 }
 
 function isValidObservedDate(value: string) {
@@ -2951,11 +3163,29 @@ artists.name AS artist_name,
     ctx: ExecutionContext,
   ) {
     ctx.waitUntil(
-      purgeExpiredRejectedArtworks(env).then((result) => {
-        console.log(
-          `Rejected artwork cleanup checked ${result.candidates} and purged ${result.purged}.`,
-        );
-      }),
+      Promise.all([
+        purgeExpiredRejectedArtworks(env).then((result) => {
+          console.log(
+            `Rejected artwork cleanup checked ${result.candidates} and purged ${result.purged}.`,
+          );
+        }),
+        retryPendingImageModeration(env).then((result) => {
+          for (const photoId of result.manualReviewPhotoIds) {
+            queueImageModerationReviewAlert(env, ctx, photoId);
+          }
+
+          console.log(
+            "Image moderation retry run",
+            JSON.stringify({
+              checked: result.checked,
+              approved: result.approved,
+              rejected: result.rejected,
+              deferred: result.deferred,
+              manualReview: result.manualReviewPhotoIds.length,
+            }),
+          );
+        }),
+      ]).then(() => undefined),
     );
   },
 } satisfies ExportedHandler<Env>;

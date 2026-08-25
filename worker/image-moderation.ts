@@ -1,7 +1,7 @@
 import type { PreparedImage } from "./image-processing.js";
 
 export type ImageModerationDecision = {
-  outcome: "approve" | "reject" | "manual_review";
+  outcome: "approve" | "reject" | "manual_review" | "retry";
   provider: "openai";
   model: "omni-moderation-latest";
   requestId: string | null;
@@ -22,13 +22,33 @@ function bytesToBase64(bytes: Uint8Array) {
   return btoa(binary);
 }
 
-function manualReviewDecision(error: string): ImageModerationDecision {
+function manualReviewDecision(
+  error: string,
+  requestId: string | null = null,
+): ImageModerationDecision {
   return {
     outcome: "manual_review",
     provider: "openai",
     model: "omni-moderation-latest",
-    requestId: null,
+    requestId,
     reason: "Automated moderation was unavailable; moderator review is required.",
+    categories: {},
+    scores: {},
+    error,
+  };
+}
+
+function retryDecision(
+  error: string,
+  requestId: string | null = null,
+): ImageModerationDecision {
+  return {
+    outcome: "retry",
+    provider: "openai",
+    model: "omni-moderation-latest",
+    requestId,
+    reason:
+      "The automated safety check is temporarily unavailable and will retry while the image remains private.",
     categories: {},
     scores: {},
     error,
@@ -138,6 +158,28 @@ function logModerationDiagnostics(
   );
 }
 
+const RETRYABLE_STATUSES = new Set([408, 409, 429, 500, 502, 503, 504]);
+
+function logProviderFailure(response: Response, details: string) {
+  console.warn(
+    "OpenAI image moderation provider unavailable",
+    JSON.stringify({
+      status: response.status,
+      requestId: response.headers.get("x-request-id"),
+      retryAfter: response.headers.get("retry-after"),
+      rateLimit: {
+        limitRequests: response.headers.get("x-ratelimit-limit-requests"),
+        remainingRequests: response.headers.get("x-ratelimit-remaining-requests"),
+        resetRequests: response.headers.get("x-ratelimit-reset-requests"),
+        limitTokens: response.headers.get("x-ratelimit-limit-tokens"),
+        remainingTokens: response.headers.get("x-ratelimit-remaining-tokens"),
+        resetTokens: response.headers.get("x-ratelimit-reset-tokens"),
+      },
+      details,
+    }),
+  );
+}
+
 export async function moderateImage(
   apiKey: string | undefined,
   image: PreparedImage,
@@ -158,7 +200,9 @@ export async function moderateImage(
         {
           type: "image_url",
           image_url: {
-            url: `data:image/jpeg;base64,${bytesToBase64(image.bytes)}`,
+            // The stripped 800px JPEG is sufficient for moderation and avoids
+            // spending provider capacity on the much larger publish asset.
+            url: `data:image/jpeg;base64,${bytesToBase64(image.thumbnailBytes)}`,
           },
         },
       ],
@@ -182,14 +226,17 @@ export async function moderateImage(
           body: requestBody,
         });
 
-        if (
-          response.ok ||
-          ![408, 409, 429, 500, 502, 503, 504].includes(response.status)
-        ) {
+        if (response.ok || !RETRYABLE_STATUSES.has(response.status)) {
           break;
         }
 
         lastTransportError = `OpenAI returned retryable status ${response.status}`;
+
+        // An immediate repeat only consumes more of an exhausted rate limit.
+        // Leave the image quarantined and let the scheduled retry handle 429s.
+        if (response.status === 429) {
+          break;
+        }
       } catch (error) {
         response = null;
         lastTransportError =
@@ -204,17 +251,21 @@ export async function moderateImage(
     }
 
     if (!response) {
-      return manualReviewDecision(lastTransportError);
+      return retryDecision(lastTransportError);
     }
 
     const requestId = response.headers.get("x-request-id");
 
     if (!response.ok) {
       const details = (await response.text()).slice(0, 500);
-      return {
-        ...manualReviewDecision(`OpenAI returned ${response.status}: ${details}`),
-        requestId,
-      };
+      const error = `OpenAI returned ${response.status}: ${details}`;
+
+      if (RETRYABLE_STATUSES.has(response.status)) {
+        logProviderFailure(response, details);
+        return retryDecision(error, requestId);
+      }
+
+      return manualReviewDecision(error, requestId);
     }
 
     const data = (await response.json()) as {
@@ -224,8 +275,7 @@ export async function moderateImage(
 
     if (!result) {
       return {
-        ...manualReviewDecision("OpenAI returned no moderation result"),
-        requestId,
+        ...manualReviewDecision("OpenAI returned no moderation result", requestId),
       };
     }
 
@@ -235,7 +285,7 @@ export async function moderateImage(
 
     return decision;
   } catch (error) {
-    return manualReviewDecision(
+    return retryDecision(
       error instanceof Error ? error.message : "Unknown moderation error",
     );
   }

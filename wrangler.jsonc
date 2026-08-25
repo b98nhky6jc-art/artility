@@ -27,7 +27,7 @@
   },
   "triggers": {
     "crons": [
-      "11 * * * *"
+      "*/10 * * * *"
     ]
   },
   "upload_source_maps": true,

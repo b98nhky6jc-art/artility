@@ -6,7 +6,7 @@ import {
 } from "../worker/image-moderation.ts";
 
 const image = {
-  bytes: new Uint8Array([0xff, 0xd8, 0xff, 0xd9]),
+  bytes: new Uint8Array([0x01, 0x02, 0x03, 0x04]),
   thumbnailBytes: new Uint8Array([0xff, 0xd8, 0xff, 0xd9]),
   sourceMimeType: "image/jpeg",
   storedMimeType: "image/jpeg" as const,
@@ -47,6 +47,8 @@ test("a normal image is approved", async () => {
   assert.equal(decision.requestId, "req_test");
   assert.match(receivedBody, /omni-moderation-latest/);
   assert.match(receivedBody, /data:image\/jpeg;base64/);
+  assert.match(receivedBody, /\/9j\/2Q==/);
+  assert.doesNotMatch(receivedBody, /AQIDBA==/);
 });
 
 test("an obvious disallowed image is rejected", async () => {
@@ -135,7 +137,7 @@ test("severe high-confidence categories auto-reject", () => {
   }
 });
 
-test("provider failure retries and remains non-public/manual review", async () => {
+test("provider transport failure retries and remains privately pending", async () => {
   let attempts = 0;
   const fetcher = (async () => {
     attempts += 1;
@@ -145,8 +147,47 @@ test("provider failure retries and remains non-public/manual review", async () =
   const decision = await moderateImage("test-key", image, fetcher);
 
   assert.equal(attempts, 2);
-  assert.equal(decision.outcome, "manual_review");
+  assert.equal(decision.outcome, "retry");
   assert.match(decision.error ?? "", /provider unavailable/);
+});
+
+test("a 429 is deferred without an immediate repeat request", async () => {
+  let attempts = 0;
+  const fetcher = (async () => {
+    attempts += 1;
+    return new Response(
+      JSON.stringify({ error: { message: "Too Many Requests" } }),
+      {
+        status: 429,
+        headers: {
+          "content-type": "application/json",
+          "retry-after": "60",
+          "x-request-id": "req_throttled",
+          "x-ratelimit-remaining-requests": "0",
+        },
+      },
+    );
+  }) as typeof fetch;
+
+  const decision = await moderateImage("test-key", image, fetcher);
+
+  assert.equal(attempts, 1);
+  assert.equal(decision.outcome, "retry");
+  assert.equal(decision.requestId, "req_throttled");
+  assert.match(decision.error ?? "", /429/);
+});
+
+test("a permanent provider configuration error goes to manual review", async () => {
+  const fetcher = (async () =>
+    new Response("invalid key", {
+      status: 401,
+      headers: { "x-request-id": "req_invalid" },
+    })) as typeof fetch;
+
+  const decision = await moderateImage("test-key", image, fetcher);
+
+  assert.equal(decision.outcome, "manual_review");
+  assert.equal(decision.requestId, "req_invalid");
 });
 
 test("a missing secret fails closed", async () => {
