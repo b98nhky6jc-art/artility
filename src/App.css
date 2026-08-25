@@ -65,6 +65,8 @@ main {
   margin-inline: auto;
   padding: var(--panel-padding);
   border-radius: var(--radius-large);
+  background: var(--panel-primary);
+  box-shadow: 0 12px 32px var(--shadow-soft);
 }
 
 
@@ -198,7 +200,7 @@ main {
 
 .hero {
   background: var(--panel-explore);
-  color: var(--cream);
+  color: var(--ink);
 
   display: grid;
   grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
@@ -210,17 +212,17 @@ main {
 .hero h2 {
   margin: 0 0 24px;
 
-  color: var(--cream);
+  color: var(--ink);
 
-  font-size: clamp(48px, 7vw, 82px);
-  line-height: 0.92;
+  font-size: var(--page-title-size);
+  line-height: 0.95;
   letter-spacing: -4px;
 }
 
 .hero p {
   max-width: 560px;
 
-  color: var(--on-dark-muted);
+  color: var(--muted);
 
   font-size: 17px;
   line-height: 1.6;
@@ -1057,17 +1059,17 @@ main {
   align-items: end;
 
   background: var(--panel-profile);
-  color: var(--cream);
+  color: var(--ink);
 }
 
 .profile-summary .eyebrow {
-  color: var(--mustard);
+  color: var(--teal-strong);
 }
 
 .profile-summary h1 {
   margin: 5px 0 12px;
 
-  color: var(--cream);
+  color: var(--ink);
 
   font-size: var(--page-title-size);
   line-height: 0.95;
@@ -1079,7 +1081,7 @@ main {
 
   margin: 0;
 
-  color: var(--on-dark-muted);
+  color: var(--muted);
 
   font-size: 17px;
   line-height: 1.6;
@@ -1093,17 +1095,17 @@ main {
   flex-wrap: wrap;
   gap: 14px;
 
-  color: var(--on-dark-muted);
+  color: var(--muted);
 }
 
 .signout-button {
   padding: 8px 12px;
 
-  border: 1px solid var(--dark-border);
+  border: 1px solid var(--line);
   border-radius: var(--radius-pill);
 
   background: transparent;
-  color: var(--cream);
+  color: var(--ink);
 
   font: inherit;
   font-size: 13px;
@@ -1113,7 +1115,7 @@ main {
 }
 
 .signout-button:hover {
-  background: var(--dark-surface-soft);
+  background: var(--soft-yellow);
 }
 
 .profile-stats {
@@ -1190,7 +1192,7 @@ main {
 
 .add-artwork-panel {
   background: var(--panel-contribute);
-  border: 1px solid var(--teal);
+  border: 0;
 }
 
 .add-artwork-panel h1 {
@@ -1256,7 +1258,7 @@ main {
   border: 1px solid var(--line);
   border-radius: var(--radius-small);
 
-  background: var(--paper);
+  background: var(--cream);
   color: var(--ink);
 
   font: inherit;
@@ -1320,7 +1322,7 @@ main {
   border: 2px dashed var(--teal-strong);
   border-radius: var(--radius-medium);
 
-  background: var(--paper);
+  background: var(--cream);
 
   text-align: center;
 
@@ -1436,7 +1438,7 @@ main {
   border: 1px solid var(--soft-line);
   border-radius: var(--radius-medium);
 
-  background: var(--paper);
+  background: var(--cream);
 }
 
 .location-review>div:first-child {
@@ -2218,7 +2220,7 @@ main {
 .contact-panel {
   min-height: 560px;
   background: var(--panel-contact);
-  border: 1px solid var(--coral);
+  border: 0;
 }
 
 .contact-panel h1 {
@@ -2426,10 +2428,9 @@ main {
 
 .artists-hero {
   background: var(--panel-artists);
-  color: var(--ink-strong);
+  color: var(--ink);
 
-  border: 1px solid var(--teal-strong);
-  box-shadow: 0 12px 32px var(--shadow-soft);
+  border: 0;
 }
 
 .artists-hero-copy {
@@ -2439,13 +2440,7 @@ main {
 }
 
 .artists-hero .eyebrow {
-  display: inline-flex;
-  padding: 6px 10px;
-
-  border-radius: var(--radius-pill);
-
-  background: var(--mustard);
-  color: var(--ink-strong);
+  color: var(--teal-strong);
 }
 
 .artists-hero h1,
@@ -2454,7 +2449,7 @@ main {
 }
 
 .artists-hero h1 {
-  color: var(--ink-strong);
+  color: var(--ink);
 
   font-size: var(--page-title-size);
   line-height: 0.95;
@@ -2464,7 +2459,7 @@ main {
 .artists-hero-copy p {
   margin: 0;
 
-  color: var(--ink-strong);
+  color: var(--muted);
 
   font-size: 17px;
   line-height: 1.6;
@@ -2484,7 +2479,7 @@ main {
   padding: 15px 18px;
   border: 1px solid var(--teal-strong);
   border-radius: var(--radius-pill);
-  background: var(--paper);
+  background: var(--cream);
   color: var(--ink);
   font: inherit;
 }
@@ -2502,7 +2497,7 @@ main {
 .artist-sort-status {
   min-height: 1.45em;
   margin: 12px 0 0;
-  color: var(--ink-strong);
+  color: var(--muted);
   font-size: 0.88rem;
   text-align: center;
 }

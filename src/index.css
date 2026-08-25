@@ -41,11 +41,12 @@
   --surface-muted: #eadbc8;
   --surface-strong: #e2cdb4;
 
-  --panel-explore: var(--palette-brown);
-  --panel-artists: var(--palette-teal);
-  --panel-contact: var(--soft-coral);
-  --panel-contribute: var(--soft-green);
-  --panel-profile: var(--palette-brown);
+  --panel-primary: var(--paper);
+  --panel-explore: var(--panel-primary);
+  --panel-artists: var(--panel-primary);
+  --panel-contact: var(--panel-primary);
+  --panel-contribute: var(--panel-primary);
+  --panel-profile: var(--panel-primary);
 
   --success: #2f6f6c;
   --success-strong: #285d5b;
