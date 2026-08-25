@@ -3034,7 +3034,7 @@ main {
 
 .art-walk-start-options {
   margin: 0 0 22px;
-  padding: 18px;
+  padding: 20px 18px 18px;
   display: grid;
   gap: 10px;
   border: 0;
@@ -3043,7 +3043,9 @@ main {
 }
 
 .art-walk-start-options legend {
-  margin-bottom: 7px;
+  width: auto;
+  margin: 0 0 7px;
+  padding: 0 8px;
   color: var(--teal-strong);
   font-weight: 800;
 }
@@ -3275,6 +3277,25 @@ main {
   .art-walk-map-heading {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .art-walk-section-heading {
+    gap: 12px;
+  }
+
+  .art-walk-section-heading .text-button {
+    align-self: flex-start;
+  }
+
+  .art-walk-start-options {
+    padding-top: 24px;
+  }
+
+  .art-walk-start-options legend {
+    max-width: 100%;
+    padding: 0 6px;
+    font-size: 17px;
+    line-height: 1.15;
   }
 
   .art-walk-summary {
