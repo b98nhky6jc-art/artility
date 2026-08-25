@@ -15,6 +15,7 @@ import Artists from "./Artists.tsx";
 import ArtistDetail from "./ArtistDetail.tsx";
 import VerifyEmail from "./VerifyEmail.tsx";
 import SiteHeader from "./SiteHeader.tsx";
+import Moderation from "./Moderation.tsx";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -32,6 +33,7 @@ createRoot(document.getElementById("root")!).render(
         <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="/artists" element={<Artists />} />
         <Route path="/artist/:id" element={<ArtistDetail />} />
+        <Route path="/admin/moderation" element={<Moderation />} />
       </Routes>
 
       <MobileNav />

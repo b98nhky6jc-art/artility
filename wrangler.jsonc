@@ -26,6 +26,10 @@
     "enabled": true
   },
   "upload_source_maps": true,
+  "vars": {
+    "ADMIN_EMAILS": "hello@artility.co.uk,temorris@me.com",
+    "REGISTRATION_ALERT_EMAIL": "hello@artility.co.uk"
+  },
   "d1_databases": [
     {
       "binding": "DB",

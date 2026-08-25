@@ -164,6 +164,51 @@ export default {
       return { ok: true, userId: session.user.id };
     }
 
+    async function requireModerator(): Promise<
+      | { ok: true; userId: string; role: "admin" | "moderator" }
+      | { ok: false; response: Response }
+    > {
+      const session = await auth.api.getSession({
+        headers: request.headers,
+      });
+
+      if (!session?.user) {
+        return {
+          ok: false,
+          response: Response.json(
+            { error: "Not signed in", code: "NOT_SIGNED_IN" },
+            { status: 401 },
+          ),
+        };
+      }
+
+      const role = await env.DB.prepare(`
+        SELECT role
+        FROM user_roles
+        WHERE user_id = ?
+          AND role IN ('admin', 'moderator')
+        LIMIT 1
+      `)
+        .bind(session.user.id)
+        .first<{ role: "admin" | "moderator" }>();
+
+      if (!role) {
+        return {
+          ok: false,
+          response: Response.json(
+            { error: "Moderator access required", code: "FORBIDDEN" },
+            { status: 403 },
+          ),
+        };
+      }
+
+      return {
+        ok: true,
+        userId: session.user.id,
+        role: role.role,
+      };
+    }
+
     if (
       url.pathname === "/api/auth/verify-email" &&
       request.method === "GET"
@@ -200,6 +245,238 @@ export default {
 
     if (url.pathname.startsWith("/api/auth/")) {
       return auth.handler(request);
+    }
+
+    if (
+      url.pathname === "/api/admin/moderation/access" &&
+      request.method === "GET"
+    ) {
+      const access = await requireModerator();
+
+      if (!access.ok) {
+        return access.response;
+      }
+
+      return Response.json({
+        is_moderator: true,
+        role: access.role,
+      });
+    }
+
+    if (
+      url.pathname === "/api/admin/moderation/cases" &&
+      request.method === "GET"
+    ) {
+      const access = await requireModerator();
+
+      if (!access.ok) {
+        return access.response;
+      }
+
+      const requestedState = url.searchParams.get("state") ?? "pending";
+      const requestedType =
+        url.searchParams.get("type") ?? "artwork_status_report";
+
+      if (requestedState !== "pending") {
+        return Response.json(
+          { error: "Only the pending moderation queue is available" },
+          { status: 400 },
+        );
+      }
+
+      if (requestedType !== "artwork_status_report") {
+        return Response.json({
+          items: [],
+          state: requestedState,
+          type: requestedType,
+        });
+      }
+
+      const reports = await env.DB.prepare(`
+        SELECT
+          reports.id,
+          reports.artwork_id,
+          reports.report_type,
+          reports.date_observed,
+          reports.note,
+          reports.photo_storage_key,
+          reports.reporting_user_id,
+          reports.replacement_artwork_id,
+          reports.moderation_state,
+          reports.created_at,
+          artworks.title AS artwork_title,
+          artworks.town AS artwork_town,
+          artworks.city AS artwork_city,
+          effective_status.status AS artwork_current_status,
+          reporter.name AS reporter_name,
+          reporter.email AS reporter_email
+        FROM artwork_status_reports AS reports
+        INNER JOIN artworks
+          ON artworks.id = reports.artwork_id
+        INNER JOIN artwork_effective_statuses AS effective_status
+          ON effective_status.artwork_id = artworks.id
+        LEFT JOIN "user" AS reporter
+          ON reporter.id = reports.reporting_user_id
+        WHERE reports.moderation_state = 'pending'
+        ORDER BY reports.created_at ASC, reports.id ASC
+      `).all<{
+        id: number;
+        artwork_id: number;
+        report_type: string;
+        date_observed: string;
+        note: string | null;
+        photo_storage_key: string | null;
+        reporting_user_id: string;
+        replacement_artwork_id: number | null;
+        moderation_state: "pending";
+        created_at: string;
+        artwork_title: string | null;
+        artwork_town: string | null;
+        artwork_city: string | null;
+        artwork_current_status: string;
+        reporter_name: string | null;
+        reporter_email: string | null;
+      }>();
+
+      return Response.json({
+        items: reports.results.map((report) => ({
+          id: `artwork_status_report:${report.id}`,
+          case_type: "artwork_status_report",
+          state: report.moderation_state,
+          created_at: report.created_at,
+          subject: {
+            type: "artwork",
+            id: report.artwork_id,
+            title: report.artwork_title,
+            town: report.artwork_town,
+            city: report.artwork_city,
+            current_status: report.artwork_current_status,
+          },
+          reporter: {
+            id: report.reporting_user_id,
+            name: report.reporter_name,
+            email: report.reporter_email,
+          },
+          payload: {
+            report_id: report.id,
+            report_type: report.report_type,
+            date_observed: report.date_observed,
+            note: report.note,
+            photo_storage_key: report.photo_storage_key,
+            replacement_artwork_id: report.replacement_artwork_id,
+          },
+        })),
+        state: requestedState,
+        type: requestedType,
+      });
+    }
+
+    const moderationDecisionMatch = url.pathname.match(
+      /^\/api\/admin\/moderation\/cases\/artwork-status-report\/(\d+)\/decision$/,
+    );
+
+    if (moderationDecisionMatch && request.method === "POST") {
+      const access = await requireModerator();
+
+      if (!access.ok) {
+        return access.response;
+      }
+
+      let body: { decision?: unknown };
+
+      try {
+        body = (await request.json()) as { decision?: unknown };
+      } catch {
+        return Response.json(
+          { error: "Decision must be valid JSON" },
+          { status: 400 },
+        );
+      }
+
+      const decision = body.decision;
+
+      if (decision !== "approved" && decision !== "rejected") {
+        return Response.json(
+          { error: "Decision must be approved or rejected" },
+          { status: 400 },
+        );
+      }
+
+      const reportId = Number(moderationDecisionMatch[1]);
+      const report = await env.DB.prepare(`
+        SELECT id, artwork_id, moderation_state
+        FROM artwork_status_reports
+        WHERE id = ?
+        LIMIT 1
+      `)
+        .bind(reportId)
+        .first<{
+          id: number;
+          artwork_id: number;
+          moderation_state: "pending" | "approved" | "rejected";
+        }>();
+
+      if (!report) {
+        return Response.json(
+          { error: "Moderation case not found" },
+          { status: 404 },
+        );
+      }
+
+      if (report.moderation_state !== "pending") {
+        return Response.json(
+          {
+            error: `This report has already been ${report.moderation_state}`,
+            code: "ALREADY_REVIEWED",
+          },
+          { status: 409 },
+        );
+      }
+
+      const update = await env.DB.prepare(`
+        UPDATE artwork_status_reports
+        SET moderation_state = ?,
+            reviewed_by = ?,
+            reviewed_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+          AND moderation_state = 'pending'
+      `)
+        .bind(decision, access.userId, reportId)
+        .run();
+
+      if (Number(update.meta.changes ?? 0) !== 1) {
+        return Response.json(
+          {
+            error: "This report was reviewed by someone else",
+            code: "ALREADY_REVIEWED",
+          },
+          { status: 409 },
+        );
+      }
+
+      const effectiveStatus = await env.DB.prepare(`
+        SELECT status, date_observed, source_report_id
+        FROM artwork_effective_statuses
+        WHERE artwork_id = ?
+        LIMIT 1
+      `)
+        .bind(report.artwork_id)
+        .first<{
+          status: string;
+          date_observed: string;
+          source_report_id: number | null;
+        }>();
+
+      return Response.json({
+        success: true,
+        case: {
+          id: `artwork_status_report:${report.id}`,
+          case_type: "artwork_status_report",
+          state: decision,
+          artwork_id: report.artwork_id,
+        },
+        effective_status: effectiveStatus,
+      });
     }
 
     if (url.pathname === "/api/artworks" && request.method === "POST") {
@@ -545,6 +822,7 @@ export default {
     artworks.longitude,
     artworks.infrastructure_type,
     artworks.city,
+    effective_status.status AS status,
 
     (
       SELECT COUNT(*)
@@ -555,6 +833,8 @@ export default {
     artists.name AS artist_name,
     photos.storage_key AS primary_photo
   FROM artworks
+  INNER JOIN artwork_effective_statuses AS effective_status
+    ON effective_status.artwork_id = artworks.id
   LEFT JOIN artists
     ON artworks.artist_id = artists.id
   LEFT JOIN photos
@@ -777,11 +1057,13 @@ export default {
         artworks.town,
         artworks.city,
         artworks.infrastructure_type,
-        artworks.status,
+        effective_status.status AS status,
         artworks.artist_id,
         artworks.created_at,
         photos.storage_key AS primary_photo
       FROM artworks
+      INNER JOIN artwork_effective_statuses AS effective_status
+        ON effective_status.artwork_id = artworks.id
       LEFT JOIN photos
         ON photos.artwork_id = artworks.id
         AND photos.is_primary = 1
@@ -833,11 +1115,13 @@ export default {
           artworks.town,
           artworks.city,
           artworks.infrastructure_type,
-artworks.status,
+effective_status.status AS status,
 artworks.artist_id,
 artworks.created_at,
           photos.storage_key AS primary_photo
         FROM artworks
+        INNER JOIN artwork_effective_statuses AS effective_status
+          ON effective_status.artwork_id = artworks.id
         LEFT JOIN photos
           ON photos.artwork_id = artworks.id
           AND photos.is_primary = 1
@@ -863,7 +1147,7 @@ artworks.created_at,
           artworks.town,
           artworks.city,
           artworks.infrastructure_type,
-          artworks.status,
+          effective_status.status AS status,
 artworks.created_at,
 
 (
@@ -883,6 +1167,8 @@ artists.instagram_handle,
 photos.storage_key AS primary_photo,
 photos.created_at AS photo_added_at
         FROM artworks
+        INNER JOIN artwork_effective_statuses AS effective_status
+          ON effective_status.artwork_id = artworks.id
         LEFT JOIN artists
           ON artworks.artist_id = artists.id
         LEFT JOIN photos
@@ -1137,7 +1423,7 @@ if (artworkDetailMatch && request.method === "GET") {
       artworks.town,
       artworks.city,
       artworks.infrastructure_type,
-      artworks.status,
+      effective_status.status AS status,
       artworks.artist_id,
       artworks.created_at,
 
@@ -1157,6 +1443,8 @@ if (artworkDetailMatch && request.method === "GET") {
       artists.instagram_handle
 
     FROM artworks
+    INNER JOIN artwork_effective_statuses AS effective_status
+      ON effective_status.artwork_id = artworks.id
     LEFT JOIN artists
       ON artworks.artist_id = artists.id
     WHERE artworks.id = ?
@@ -1547,7 +1835,7 @@ if (artworkDetailMatch && request.method === "GET") {
           artworks.town,
           artworks.city,
          artworks.infrastructure_type,
-artworks.status,
+effective_status.status AS status,
 artworks.artist_id,
 artists.name AS artist_name,
           artists.instagram_handle,
@@ -1556,6 +1844,8 @@ artists.name AS artist_name,
         FROM checkins
         INNER JOIN artworks
           ON artworks.id = checkins.artwork_id
+        INNER JOIN artwork_effective_statuses AS effective_status
+          ON effective_status.artwork_id = artworks.id
         LEFT JOIN artists
           ON artworks.artist_id = artists.id
         LEFT JOIN photos
