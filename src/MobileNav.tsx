@@ -119,6 +119,7 @@ export default function MobileNav() {
         <Link
           to="/admin/moderation"
           className={isModeration ? "active" : ""}
+          aria-label="Open moderation review queue"
         >
           <span className="nav-icon">✓</span>
           <span>Review</span>
