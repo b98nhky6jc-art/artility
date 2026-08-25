@@ -92,7 +92,8 @@ button {
 }
 
 .app {
-  min-height: 100vh;
+  width: 100%;
+  flex: 1;
 }
 
 main {
@@ -727,6 +728,11 @@ main {
 /* =========================================================
    ARTWORK DETAIL PAGE
    ========================================================= */
+
+.detail-shell {
+  width: 100%;
+  flex: 1;
+}
 
 .detail-header {
   width: 100%;

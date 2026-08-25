@@ -55,53 +55,6 @@ function App() {
 
   return (
     <div className="app">
-      <header className="topbar">
-        <Link to="/" className="brand-lockup">
-          <span className="eyebrow">ART HIDING IN PLAIN SIGHT</span>
-          <div className="brand-row">
-            <span className="brand-name">Artility</span>
-            <span className="beta-badge">BETA</span>
-          </div>
-        </Link>
-
-        <nav className="desktop-nav" aria-label="Primary navigation">
-          <a href="#nearby" className="nav-link">
-            Explore
-          </a>
-
-          <Link to="/artists" className="nav-link">
-            Artists
-          </Link>
-
-          <Link to="/contact" className="nav-link">
-            Contact
-          </Link>
-          <Link to="/add-artwork" className="nav-link">
-            Add artwork
-          </Link>
-
-          {session?.user ? (
-            <Link
-              to="/my-finds"
-              className="profile-button"
-              aria-label="My finds"
-            >
-              {session.user.name
-                ? session.user.name.charAt(0).toUpperCase()
-                : "◎"}
-            </Link>
-          ) : (
-            <Link
-              to="/login"
-              className="profile-button"
-              aria-label="Sign in"
-            >
-              ◎
-            </Link>
-          )}
-        </nav>
-      </header>
-
       {session?.user && !canContribute && (
         <div className="page-verification-banner">
           <EmailVerificationNotice email={session.user.email} compact />

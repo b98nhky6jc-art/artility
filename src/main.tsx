@@ -14,10 +14,13 @@ import Contact from "./Contact.tsx";
 import Artists from "./Artists.tsx";
 import ArtistDetail from "./ArtistDetail.tsx";
 import VerifyEmail from "./VerifyEmail.tsx";
+import SiteHeader from "./SiteHeader.tsx";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
+      <SiteHeader />
+
       <Routes>
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
@@ -28,7 +31,7 @@ createRoot(document.getElementById("root")!).render(
         <Route path="/contact" element={<Contact />} />
         <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="/artists" element={<Artists />} />
-<Route path="/artist/:id" element={<ArtistDetail />} />
+        <Route path="/artist/:id" element={<ArtistDetail />} />
       </Routes>
 
       <MobileNav />
