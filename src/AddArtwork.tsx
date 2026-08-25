@@ -7,6 +7,7 @@ import { getArtworkDisplayTitle } from "./artworkDisplay";
 import { authClient } from "./lib/auth-client";
 import EmailVerificationNotice from "./EmailVerificationNotice";
 import { canUserContribute } from "./emailVerification";
+import ArtistAutocomplete from "./ArtistAutocomplete";
 import {
   INFRASTRUCTURE_TYPES,
   type InfrastructureType,
@@ -687,25 +688,12 @@ export default function AddArtwork() {
                   />
                 </label>
 
-                <label>
-                  Artist name
-                  <input
-                    value={artistName}
-                    onChange={(event) => setArtistName(event.target.value)}
-                    placeholder="Optional"
-                  />
-                </label>
-
-                <label>
-                  Instagram handle
-                  <input
-                    value={instagramHandle}
-                    onChange={(event) =>
-                      setInstagramHandle(event.target.value.replace(/^@/, ""))
-                    }
-                    placeholder="Optional — without @"
-                  />
-                </label>
+                <ArtistAutocomplete
+                  artistName={artistName}
+                  instagramHandle={instagramHandle}
+                  onArtistNameChange={setArtistName}
+                  onInstagramHandleChange={setInstagramHandle}
+                />
 
                 <label>
                   Artwork setting

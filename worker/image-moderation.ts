@@ -35,6 +35,109 @@ function manualReviewDecision(error: string): ImageModerationDecision {
   };
 }
 
+type ModerationResult = {
+  flagged?: boolean;
+  categories?: Record<string, boolean>;
+  category_scores?: Record<string, number>;
+};
+
+const SEVERE_REJECT_THRESHOLDS: Record<string, number> = {
+  "sexual/minors": 0.8,
+  sexual: 0.98,
+  "violence/graphic": 0.95,
+  "self-harm/instructions": 0.95,
+  "hate/threatening": 0.95,
+  "harassment/threatening": 0.98,
+  "illicit/violent": 0.95,
+};
+
+export function decideModerationResult(
+  result: ModerationResult,
+  requestId: string | null = null,
+): ImageModerationDecision {
+  const categories = result.categories ?? {};
+  const scores = result.category_scores ?? {};
+
+  if (!result.flagged) {
+    return {
+      outcome: "approve",
+      provider: "openai",
+      model: "omni-moderation-latest",
+      requestId,
+      reason: "The moderation response was not flagged.",
+      categories,
+      scores,
+      error: null,
+    };
+  }
+
+  const automaticReject = Object.entries(SEVERE_REJECT_THRESHOLDS).find(
+    ([category, threshold]) =>
+      categories[category] === true &&
+      Number.isFinite(scores[category]) &&
+      scores[category] >= threshold,
+  );
+
+  if (automaticReject) {
+    return {
+      outcome: "reject",
+      provider: "openai",
+      model: "omni-moderation-latest",
+      requestId,
+      reason: `Automatically rejected for high-confidence ${automaticReject[0]}.`,
+      categories,
+      scores,
+      error: null,
+    };
+  }
+
+  const flaggedCategories = Object.entries(categories)
+    .filter(([, selected]) => selected)
+    .map(([category]) => category);
+
+  return {
+    outcome: "manual_review",
+    provider: "openai",
+    model: "omni-moderation-latest",
+    requestId,
+    reason: flaggedCategories.length
+      ? `Flagged ${flaggedCategories.join(", ")} result requires moderator review.`
+      : "The flagged moderation result requires moderator review.",
+    categories,
+    scores,
+    error: null,
+  };
+}
+
+function logModerationDiagnostics(
+  requestId: string | null,
+  result: ModerationResult,
+  decision: ImageModerationDecision,
+) {
+  const categories = result.categories ?? {};
+  const scores = result.category_scores ?? {};
+  const relevantScores = Object.entries(scores)
+    .filter(([category, score]) =>
+      categories[category] === true ||
+      (Number.isFinite(score) && score >= 0.01),
+    )
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 10);
+
+  console.info(
+    "OpenAI image moderation decision",
+    JSON.stringify({
+      requestId,
+      flagged: Boolean(result.flagged),
+      outcome: decision.outcome,
+      flaggedCategories: Object.entries(categories)
+        .filter(([, selected]) => selected)
+        .map(([category]) => category),
+      relevantScores: Object.fromEntries(relevantScores),
+    }),
+  );
+}
+
 export async function moderateImage(
   apiKey: string | undefined,
   image: PreparedImage,
@@ -115,11 +218,7 @@ export async function moderateImage(
     }
 
     const data = (await response.json()) as {
-      results?: Array<{
-        flagged?: boolean;
-        categories?: Record<string, boolean>;
-        category_scores?: Record<string, number>;
-      }>;
+      results?: ModerationResult[];
     };
     const result = data.results?.[0];
 
@@ -130,61 +229,11 @@ export async function moderateImage(
       };
     }
 
-    const categories = result.categories ?? {};
-    const scores = result.category_scores ?? {};
-    const rejectThresholds: Record<string, number> = {
-      "sexual/minors": 0.15,
-      sexual: 0.9,
-      "violence/graphic": 0.85,
-      "self-harm/instructions": 0.85,
-    };
-    const automaticReject = Object.entries(rejectThresholds).find(
-      ([category, threshold]) =>
-        categories[category] === true && (scores[category] ?? 0) >= threshold,
-    );
+    const decision = decideModerationResult(result, requestId);
 
-    if (automaticReject) {
-      return {
-        outcome: "reject",
-        provider: "openai",
-        model: "omni-moderation-latest",
-        requestId,
-        reason: `Automatically rejected for ${automaticReject[0]}.`,
-        categories,
-        scores,
-        error: null,
-      };
-    }
+    logModerationDiagnostics(requestId, result, decision);
 
-    const elevatedScore = Object.entries(scores).find(
-      ([, score]) => Number.isFinite(score) && score >= 0.35,
-    );
-
-    if (result.flagged || elevatedScore) {
-      return {
-        outcome: "manual_review",
-        provider: "openai",
-        model: "omni-moderation-latest",
-        requestId,
-        reason: elevatedScore
-          ? `Borderline ${elevatedScore[0]} result requires moderator review.`
-          : "The automated moderation result requires moderator review.",
-        categories,
-        scores,
-        error: null,
-      };
-    }
-
-    return {
-      outcome: "approve",
-      provider: "openai",
-      model: "omni-moderation-latest",
-      requestId,
-      reason: "No disallowed image content was detected.",
-      categories,
-      scores,
-      error: null,
-    };
+    return decision;
   } catch (error) {
     return manualReviewDecision(
       error instanceof Error ? error.message : "Unknown moderation error",

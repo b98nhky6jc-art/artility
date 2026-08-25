@@ -11,6 +11,13 @@ import {
 } from "./image-processing.js";
 import { moderateImage } from "./image-moderation.js";
 import { normaliseInfrastructureType } from "../shared/infrastructure-types.js";
+import {
+  isUnknownArtistName,
+  isValidInstagramHandle,
+  normaliseArtistName,
+  normaliseArtistNameKey,
+  normaliseInstagramHandle,
+} from "../shared/artist-identity.js";
 
 const MAX_PHOTOS_PER_ARTWORK = 3;
 const MAX_STATUS_REPORT_NOTE_LENGTH = 1000;
@@ -28,6 +35,99 @@ type ArtworkPhotoModerationState =
   | "approved"
   | "rejected"
   | "manual_review";
+
+type ResolvedArtist = {
+  id: number;
+  name: string;
+  instagram_handle: string | null;
+};
+
+class ArtistIdentityError extends Error {}
+
+async function resolveArtworkArtist(
+  env: Env,
+  rawName: unknown,
+  rawInstagramHandle: unknown,
+): Promise<ResolvedArtist | null> {
+  const artistName = normaliseArtistName(rawName);
+  const instagramHandle = normaliseInstagramHandle(rawInstagramHandle);
+
+  if (isUnknownArtistName(artistName)) {
+    return null;
+  }
+
+  if (!isValidInstagramHandle(instagramHandle)) {
+    throw new ArtistIdentityError("Instagram handle is not valid");
+  }
+
+  const normalizedName = normaliseArtistNameKey(artistName);
+
+  if (!normalizedName && !instagramHandle) {
+    return null;
+  }
+
+  const existingArtist = await env.DB.prepare(`
+    SELECT id, name, instagram_handle
+    FROM artists
+    WHERE (? IS NOT NULL AND normalized_instagram_handle = ?)
+       OR (? IS NOT NULL AND normalized_name = ?)
+    ORDER BY
+      CASE WHEN normalized_instagram_handle = ? THEN 0 ELSE 1 END,
+      id ASC
+    LIMIT 1
+  `)
+    .bind(
+      instagramHandle,
+      instagramHandle,
+      normalizedName,
+      normalizedName,
+      instagramHandle,
+    )
+    .first<ResolvedArtist>();
+
+  if (existingArtist) {
+    if (!existingArtist.instagram_handle && instagramHandle) {
+      await env.DB.prepare(`
+        UPDATE artists
+        SET instagram_handle = ?,
+            normalized_instagram_handle = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `)
+        .bind(instagramHandle, instagramHandle, existingArtist.id)
+        .run();
+
+      return { ...existingArtist, instagram_handle: instagramHandle };
+    }
+
+    // The canonical record owns its preferred display casing.
+    return existingArtist;
+  }
+
+  const displayName = artistName ?? `@${instagramHandle}`;
+  const insert = await env.DB.prepare(`
+    INSERT INTO artists (
+      name,
+      normalized_name,
+      instagram_handle,
+      normalized_instagram_handle
+    )
+    VALUES (?, ?, ?, ?)
+  `)
+    .bind(
+      displayName,
+      normaliseArtistNameKey(displayName),
+      instagramHandle,
+      instagramHandle,
+    )
+    .run();
+
+  return {
+    id: Number(insert.meta.last_row_id),
+    name: displayName,
+    instagram_handle: instagramHandle,
+  };
+}
 
 async function enforceImageUploadRateLimit(
   env: Env,
@@ -1077,6 +1177,86 @@ export default {
       });
     }
 
+    if (
+      url.pathname ===
+        "/api/admin/moderation/cases/artwork-photo/bulk-approve" &&
+      request.method === "POST"
+    ) {
+      const access = await requireModerator();
+
+      if (!access.ok) {
+        return access.response;
+      }
+
+      let body: { photo_ids?: unknown };
+
+      try {
+        body = (await request.json()) as { photo_ids?: unknown };
+      } catch {
+        return Response.json(
+          { error: "Photo IDs must be valid JSON" },
+          { status: 400 },
+        );
+      }
+
+      if (
+        !Array.isArray(body.photo_ids) ||
+        body.photo_ids.length === 0 ||
+        body.photo_ids.length > 50 ||
+        body.photo_ids.some(
+          (photoId) => !Number.isInteger(photoId) || Number(photoId) <= 0,
+        )
+      ) {
+        return Response.json(
+          {
+            error:
+              "Provide between 1 and 50 unique, positive integer photo IDs",
+          },
+          { status: 400 },
+        );
+      }
+
+      const photoIds = [...new Set(body.photo_ids as number[])];
+      const approved: number[] = [];
+      const skipped: number[] = [];
+      const failed: Array<{ id: number; error: string }> = [];
+
+      for (const photoId of photoIds) {
+        const photo = await env.DB.prepare(`
+          SELECT moderation_state
+          FROM photos
+          WHERE id = ?
+          LIMIT 1
+        `)
+          .bind(photoId)
+          .first<{ moderation_state: ArtworkPhotoModerationState }>();
+
+        if (!photo || photo.moderation_state !== "manual_review") {
+          skipped.push(photoId);
+          continue;
+        }
+
+        try {
+          await publishArtworkPhoto(env, photoId, access.userId);
+          approved.push(photoId);
+        } catch (error) {
+          console.error("Bulk image approval failed", {
+            photoId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          failed.push({
+            id: photoId,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Could not publish this image",
+          });
+        }
+      }
+
+      return Response.json({ approved, skipped, failed });
+    }
+
     const imageModerationDecisionMatch = url.pathname.match(
       /^\/api\/admin\/moderation\/cases\/artwork-photo\/(\d+)\/decision$/,
     );
@@ -1194,16 +1374,13 @@ export default {
         const title =
           String(formData.get("title") ?? "").trim() || null;
 
-        const artistName = String(
-          formData.get("artist_name") ?? "",
-        ).trim();
+        const artistName = normaliseArtistName(
+          formData.get("artist_name"),
+        );
 
-        const instagramHandle = String(
-          formData.get("instagram_handle") ?? "",
-        )
-          .trim()
-          .replace(/^@/, "")
-          .toLowerCase();
+        const instagramHandle = normaliseInstagramHandle(
+          formData.get("instagram_handle"),
+        );
 
         const description = String(
           formData.get("description") ?? "",
@@ -1260,75 +1437,12 @@ export default {
           photos.map((photo) => prepareImageUpload(photo)),
         );
 
-        let artistId: number | null = null;
-
-        if (artistName || instagramHandle) {
-          let existingArtist = null;
-
-          if (instagramHandle) {
-            existingArtist = await env.DB.prepare(`
-          SELECT id
-          FROM artists
-          WHERE LOWER(instagram_handle) = LOWER(?)
-          LIMIT 1
-        `)
-              .bind(instagramHandle)
-              .first<{ id: number }>();
-          }
-
-          if (!existingArtist && artistName) {
-            existingArtist = await env.DB.prepare(`
-          SELECT id
-          FROM artists
-          WHERE LOWER(name) = LOWER(?)
-          LIMIT 1
-        `)
-              .bind(artistName)
-              .first<{ id: number }>();
-          }
-
-          if (existingArtist) {
-            artistId = existingArtist.id;
-
-            if (instagramHandle) {
-              await env.DB.prepare(`
-            UPDATE artists
-            SET instagram_handle = ?,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-              AND (
-                instagram_handle IS NULL
-                OR instagram_handle = ''
-              )
-          `)
-                .bind(instagramHandle, artistId)
-                .run();
-            }
-          } else {
-            const resolvedArtistName =
-              artistName ||
-              (instagramHandle
-                ? `@${instagramHandle}`
-                : "Unknown artist");
-
-            const artistInsert = await env.DB.prepare(`
-          INSERT INTO artists (
-            name,
-            instagram_handle
-          )
-          VALUES (?, ?)
-        `)
-              .bind(
-                resolvedArtistName,
-                instagramHandle || null
-              )
-              .run();
-
-            artistId = Number(
-              artistInsert.meta.last_row_id
-            );
-          }
-        }
+        const resolvedArtist = await resolveArtworkArtist(
+          env,
+          artistName,
+          instagramHandle,
+        );
+        const artistId = resolvedArtist?.id ?? null;
 
         const artworkInsert = await env.DB.prepare(`
       INSERT INTO artworks (
@@ -1401,6 +1515,10 @@ export default {
                 error.status === 429 ? { "retry-after": "3600" } : undefined,
             },
           );
+        }
+
+        if (error instanceof ArtistIdentityError) {
+          return Response.json({ error: error.message }, { status: 400 });
         }
 
         return Response.json(
@@ -1551,6 +1669,57 @@ export default {
 
       return Response.json(nearby);
     }
+    if (
+      url.pathname === "/api/artists/suggestions" &&
+      request.method === "GET"
+    ) {
+      const nameQuery = normaliseArtistNameKey(url.searchParams.get("name"));
+      const instagramQuery = normaliseInstagramHandle(
+        url.searchParams.get("instagram"),
+      );
+
+      if (
+        (nameQuery?.length ?? 0) < 2 &&
+        (instagramQuery?.length ?? 0) < 2
+      ) {
+        return Response.json({ items: [] });
+      }
+
+      const result = await env.DB.prepare(`
+        SELECT id, name, instagram_handle
+        FROM artists
+        WHERE normalized_name NOT IN ('artist unknown', 'unknown artist')
+          AND (
+            (? IS NOT NULL AND instr(normalized_name, ?) > 0)
+            OR (? IS NOT NULL AND instr(normalized_instagram_handle, ?) > 0)
+          )
+        ORDER BY
+          CASE
+            WHEN normalized_instagram_handle = ? THEN 0
+            WHEN normalized_name = ? THEN 1
+            ELSE 2
+          END,
+          name COLLATE NOCASE,
+          id
+        LIMIT 8
+      `)
+        .bind(
+          nameQuery,
+          nameQuery,
+          instagramQuery,
+          instagramQuery,
+          instagramQuery,
+          nameQuery,
+        )
+        .all<{
+          id: number;
+          name: string;
+          instagram_handle: string | null;
+        }>();
+
+      return Response.json({ items: result.results });
+    }
+
     if (url.pathname === "/api/artists" && request.method === "GET") {
       const result = await env.DB.prepare(`
     SELECT
@@ -2340,115 +2509,20 @@ if (artworkDetailMatch && request.method === "GET") {
             current.instagram_handle,
           );
 
-          const instagramHandle =
-            instagramHandleValue
-              ?.replace(/^@/, "")
-              .toLowerCase() || null;
+          const resolvedArtist = await resolveArtworkArtist(
+            env,
+            artistName,
+            instagramHandleValue,
+          );
 
-          if (
-            instagramHandle &&
-            !/^[A-Za-z0-9._]{1,30}$/.test(instagramHandle)
-          ) {
-            return Response.json(
-              { error: "Instagram handle is not valid" },
-              { status: 400 },
-            );
-          }
-
-          if (!artistName && !instagramHandle) {
+          if (!resolvedArtist) {
             artistId = null;
             finalArtistName = null;
             finalInstagramHandle = null;
           } else {
-            let existingArtist:
-              | {
-                id: number;
-                name: string;
-                instagram_handle: string | null;
-              }
-              | null = null;
-
-            if (instagramHandle) {
-              existingArtist = await env.DB.prepare(`
-                SELECT id, name, instagram_handle
-                FROM artists
-                WHERE LOWER(instagram_handle) = LOWER(?)
-                LIMIT 1
-              `)
-                .bind(instagramHandle)
-                .first<{
-                  id: number;
-                  name: string;
-                  instagram_handle: string | null;
-                }>();
-            }
-
-            if (!existingArtist && artistName) {
-              existingArtist = await env.DB.prepare(`
-                SELECT id, name, instagram_handle
-                FROM artists
-                WHERE LOWER(name) = LOWER(?)
-                LIMIT 1
-              `)
-                .bind(artistName)
-                .first<{
-                  id: number;
-                  name: string;
-                  instagram_handle: string | null;
-                }>();
-            }
-
-            if (existingArtist) {
-              artistId = existingArtist.id;
-
-              finalArtistName =
-                artistName ||
-                existingArtist.name ||
-                (instagramHandle
-                  ? `@${instagramHandle}`
-                  : "Unknown artist");
-
-              finalInstagramHandle = instagramHandle;
-
-              await env.DB.prepare(`
-                UPDATE artists
-                SET name = ?,
-                    instagram_handle = ?,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-              `)
-                .bind(
-                  finalArtistName,
-                  finalInstagramHandle,
-                  artistId,
-                )
-                .run();
-            } else {
-              finalArtistName =
-                artistName ||
-                (instagramHandle
-                  ? `@${instagramHandle}`
-                  : "Unknown artist");
-
-              finalInstagramHandle = instagramHandle;
-
-              const artistInsert = await env.DB.prepare(`
-                INSERT INTO artists (
-                  name,
-                  instagram_handle
-                )
-                VALUES (?, ?)
-              `)
-                .bind(
-                  finalArtistName,
-                  finalInstagramHandle,
-                )
-                .run();
-
-              artistId = Number(
-                artistInsert.meta.last_row_id,
-              );
-            }
+            artistId = resolvedArtist.id;
+            finalArtistName = resolvedArtist.name;
+            finalInstagramHandle = resolvedArtist.instagram_handle;
           }
         }
 
@@ -2518,6 +2592,10 @@ if (artworkDetailMatch && request.method === "GET") {
         });
       } catch (error) {
         console.error("Artwork edit failed:", error);
+
+        if (error instanceof ArtistIdentityError) {
+          return Response.json({ error: error.message }, { status: 400 });
+        }
 
         return Response.json(
           { error: "Could not update artwork" },

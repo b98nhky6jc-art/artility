@@ -1,6 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import "./App.css";
+import {
+  getDistanceInMetres,
+  requestBrowserLocation,
+  type UserLocation,
+} from "./artworkDiscovery";
 
 type Artist = {
   id: number | "unknown";
@@ -17,17 +22,31 @@ type Artist = {
   }>;
 };
 
-type ArtistSort = "az" | "newest" | "oldest" | "nearest";
+type ArtistSort =
+  | "closest"
+  | "furthest"
+  | "newest"
+  | "oldest"
+  | "artist-az"
+  | "artist-za";
 
-type UserLocation = {
-  latitude: number;
-  longitude: number;
-};
+function compareNames(a: Artist, b: Artist, direction: "asc" | "desc" = "asc") {
+  const aUnknown = a.id === "unknown";
+  const bUnknown = b.id === "unknown";
 
-function compareNames(a: Artist, b: Artist) {
-  return a.name.localeCompare(b.name, undefined, {
+  if (aUnknown || bUnknown) {
+    if (aUnknown && bUnknown) {
+      return 0;
+    }
+
+    return aUnknown ? 1 : -1;
+  }
+
+  const difference = a.name.localeCompare(b.name, undefined, {
     sensitivity: "base",
   });
+
+  return direction === "asc" ? difference : -difference;
 }
 
 function createdAtTimestamp(artist: Artist) {
@@ -40,34 +59,6 @@ function createdAtTimestamp(artist: Artist) {
   return Number.isFinite(timestamp) ? timestamp : null;
 }
 
-function distanceBetween(
-  origin: UserLocation,
-  destination: UserLocation,
-) {
-  const earthRadius = 6371000;
-  const toRadians = (degrees: number) =>
-    (degrees * Math.PI) / 180;
-  const latitudeDelta = toRadians(
-    destination.latitude - origin.latitude,
-  );
-  const longitudeDelta = toRadians(
-    destination.longitude - origin.longitude,
-  );
-  const originLatitude = toRadians(origin.latitude);
-  const destinationLatitude = toRadians(destination.latitude);
-  const a =
-    Math.sin(latitudeDelta / 2) ** 2 +
-    Math.cos(originLatitude) *
-      Math.cos(destinationLatitude) *
-      Math.sin(longitudeDelta / 2) ** 2;
-
-  return (
-    earthRadius *
-    2 *
-    Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-  );
-}
-
 function nearestArtworkDistance(
   artist: Artist,
   userLocation: UserLocation,
@@ -78,7 +69,8 @@ function nearestArtworkDistance(
 
   return Math.min(
     ...artist.artwork_locations.map((location) =>
-      distanceBetween(userLocation, location),
+      getDistanceInMetres(userLocation, { id: 0, ...location }) ??
+      Number.POSITIVE_INFINITY,
     ),
   );
 }
@@ -86,14 +78,15 @@ function nearestArtworkDistance(
 export default function Artists() {
   const [artists, setArtists] = useState<Artist[]>([]);
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<ArtistSort>("az");
+  const [sort, setSort] = useState<ArtistSort>("newest");
   const [userLocation, setUserLocation] =
     useState<UserLocation | null>(null);
   const [locationStatus, setLocationStatus] = useState<
-    "idle" | "requesting" | "ready" | "unavailable"
-  >("idle");
+    "requesting" | "ready" | "unavailable"
+  >("requesting");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const sortWasChosen = useRef(false);
 
   useEffect(() => {
     async function loadArtists() {
@@ -118,6 +111,30 @@ export default function Artists() {
     }
 
     loadArtists();
+  }, []);
+
+  useEffect(() => {
+    let isCurrent = true;
+
+    void requestBrowserLocation().then((location) => {
+      if (!isCurrent) {
+        return;
+      }
+
+      if (location) {
+        setUserLocation(location);
+        setLocationStatus("ready");
+        if (!sortWasChosen.current) {
+          setSort("closest");
+        }
+      } else {
+        setLocationStatus("unavailable");
+      }
+    });
+
+    return () => {
+      isCurrent = false;
+    };
   }, []);
 
   const visibleArtists = useMemo(() => {
@@ -153,57 +170,37 @@ export default function Artists() {
         return dateDifference || compareNames(a, b);
       }
 
-      if (sort === "nearest" && userLocation) {
-        const distanceDifference =
-          nearestArtworkDistance(a, userLocation) -
-          nearestArtworkDistance(b, userLocation);
+      if ((sort === "closest" || sort === "furthest") && userLocation) {
+        const aDistance = nearestArtworkDistance(a, userLocation);
+        const bDistance = nearestArtworkDistance(b, userLocation);
 
-        return distanceDifference || compareNames(a, b);
+        if (!Number.isFinite(aDistance) || !Number.isFinite(bDistance)) {
+          if (!Number.isFinite(aDistance) && !Number.isFinite(bDistance)) {
+            return compareNames(a, b);
+          }
+
+          return Number.isFinite(aDistance) ? -1 : 1;
+        }
+
+        const distanceDifference = aDistance - bDistance;
+
+        return (
+          (sort === "closest" ? distanceDifference : -distanceDifference) ||
+          compareNames(a, b)
+        );
       }
 
-      return compareNames(a, b);
+      return compareNames(a, b, sort === "artist-za" ? "desc" : "asc");
     });
   }, [artists, search, sort, userLocation]);
-
-  function requestLocation() {
-    if (!navigator.geolocation) {
-      setLocationStatus("unavailable");
-      return;
-    }
-
-    setLocationStatus("requesting");
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setUserLocation({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        });
-        setLocationStatus("ready");
-      },
-      () => setLocationStatus("unavailable"),
-      {
-        enableHighAccuracy: false,
-        maximumAge: 300000,
-        timeout: 10000,
-      },
-    );
-  }
 
   function handleSortChange(
     event: React.ChangeEvent<HTMLSelectElement>,
   ) {
     const nextSort = event.target.value as ArtistSort;
 
+    sortWasChosen.current = true;
     setSort(nextSort);
-
-    if (
-      nextSort === "nearest" &&
-      !userLocation &&
-      locationStatus !== "requesting"
-    ) {
-      requestLocation();
-    }
   }
 
   return (
@@ -243,28 +240,18 @@ export default function Artists() {
                 value={sort}
                 onChange={handleSortChange}
               >
-                <option value="az">A–Z</option>
-                <option value="newest">Most recently added</option>
-                <option value="oldest">Oldest added</option>
-                <option value="nearest">Closest to me</option>
+                {userLocation && <option value="closest">Closest</option>}
+                {userLocation && <option value="furthest">Furthest</option>}
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="artist-az">Artist A–Z</option>
+                <option value="artist-za">Artist Z–A</option>
               </select>
             </div>
 
-            {sort === "nearest" && (
+            {locationStatus === "requesting" && (
               <p className="artist-sort-status" aria-live="polite">
-                {locationStatus === "requesting" &&
-                  "Getting your location…"}
-                {locationStatus === "ready" &&
-                  "Showing artists with nearby work first."}
-                {locationStatus === "unavailable" && (
-                  <>
-                    Location is unavailable. Check your browser permission or{" "}
-                    <button type="button" onClick={requestLocation}>
-                      try again
-                    </button>
-                    .
-                  </>
-                )}
+                Getting your location for distance sorting…
               </p>
             )}
           </section>

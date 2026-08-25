@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { moderateImage } from "../worker/image-moderation.ts";
+import {
+  decideModerationResult,
+  moderateImage,
+} from "../worker/image-moderation.ts";
 
 const image = {
   bytes: new Uint8Array([0xff, 0xd8, 0xff, 0xd9]),
@@ -60,18 +63,76 @@ test("an obvious disallowed image is rejected", async () => {
   assert.match(decision.reason, /sexual\/minors/);
 });
 
-test("a borderline result is held for manual review", async () => {
-  const fetcher = (async () =>
-    moderationResponse({
-      flagged: false,
-      categories: { violence: false },
-      category_scores: { violence: 0.42 },
-    })) as typeof fetch;
+test("representative benign street-art results consistently auto-approve", () => {
+  const ordinaryArtilityResults = [
+    {
+      name: "painted utility box",
+      categories: { violence: false, harassment: false },
+      scores: { violence: 0.42, harassment: 0.07 },
+    },
+    {
+      name: "large wall mural",
+      categories: { sexual: false, hate: false },
+      scores: { sexual: 0.31, hate: 0.04 },
+    },
+    {
+      name: "painted bollard",
+      categories: { "violence/graphic": false },
+      scores: { "violence/graphic": 0.12 },
+    },
+    {
+      name: "abstract shutter artwork",
+      categories: { harassment: false, violence: false },
+      scores: { harassment: 0.38, violence: 0.21 },
+    },
+    {
+      name: "street sculpture",
+      categories: { illicit: false, sexual: false },
+      scores: { illicit: 0.16, sexual: 0.08 },
+    },
+  ];
 
-  const decision = await moderateImage("test-key", image, fetcher);
+  for (const fixture of ordinaryArtilityResults) {
+    const decision = decideModerationResult({
+      flagged: false,
+      categories: fixture.categories,
+      category_scores: fixture.scores,
+    });
+
+    assert.equal(decision.outcome, "approve", fixture.name);
+  }
+});
+
+test("a genuinely flagged borderline result is held for manual review", () => {
+  const decision = decideModerationResult({
+    flagged: true,
+    categories: { violence: true, "violence/graphic": false },
+    category_scores: { violence: 0.72, "violence/graphic": 0.18 },
+  });
 
   assert.equal(decision.outcome, "manual_review");
   assert.equal(decision.error, null);
+});
+
+test("severe high-confidence categories auto-reject", () => {
+  for (const result of [
+    {
+      categories: { "sexual/minors": true },
+      category_scores: { "sexual/minors": 0.99 },
+    },
+    {
+      categories: { "violence/graphic": true },
+      category_scores: { "violence/graphic": 0.98 },
+    },
+    {
+      categories: { "hate/threatening": true },
+      category_scores: { "hate/threatening": 0.97 },
+    },
+  ]) {
+    const decision = decideModerationResult({ flagged: true, ...result });
+
+    assert.equal(decision.outcome, "reject");
+  }
 });
 
 test("provider failure retries and remains non-public/manual review", async () => {

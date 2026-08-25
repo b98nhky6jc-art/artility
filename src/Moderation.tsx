@@ -63,6 +63,13 @@ type ModerationCase =
 
 type QueueResponse = { items: ModerationCase[] };
 
+type BulkApprovalResponse = {
+  approved?: number[];
+  skipped?: number[];
+  failed?: Array<{ id: number; error: string }>;
+  error?: string;
+};
+
 type QueueState =
   | "loading"
   | "ready"
@@ -326,6 +333,8 @@ export default function Moderation() {
   } | null>(null);
   const [caseErrors, setCaseErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState("");
+  const [bulkApproving, setBulkApproving] = useState(false);
+  const [bulkError, setBulkError] = useState("");
 
   const loadQueue = useCallback(async () => {
     setQueueState("loading");
@@ -415,6 +424,81 @@ export default function Moderation() {
     }
   }
 
+  const imageCases = items.filter(
+    (item): item is ArtworkPhotoModerationCase =>
+      item.case_type === "artwork_photo",
+  );
+
+  async function bulkApproveImages() {
+    const photoIds = imageCases.map((item) => item.payload.photo_id);
+
+    if (
+      photoIds.length === 0 ||
+      !window.confirm(
+        `Approve all ${photoIds.length} image${photoIds.length === 1 ? "" : "s"} currently waiting for review?`,
+      )
+    ) {
+      return;
+    }
+
+    setBulkApproving(true);
+    setBulkError("");
+    setNotice("");
+
+    try {
+      const response = await fetch(
+        "/api/admin/moderation/cases/artwork-photo/bulk-approve",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ photo_ids: photoIds }),
+        },
+      );
+      const data = (await response.json()) as BulkApprovalResponse;
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Could not approve the image queue.");
+      }
+
+      const processedIds = new Set([
+        ...(data.approved ?? []),
+        ...(data.skipped ?? []),
+      ]);
+      setItems((current) =>
+        current.filter(
+          (item) =>
+            item.case_type !== "artwork_photo" ||
+            !processedIds.has(item.payload.photo_id),
+        ),
+      );
+
+      const approvedCount = data.approved?.length ?? 0;
+      const skippedCount = data.skipped?.length ?? 0;
+      const failedCount = data.failed?.length ?? 0;
+      setNotice(
+        `${approvedCount} image${approvedCount === 1 ? "" : "s"} approved and published.${
+          skippedCount
+            ? ` ${skippedCount} already-reviewed image${skippedCount === 1 ? " was" : "s were"} skipped.`
+            : ""
+        }`,
+      );
+
+      if (failedCount) {
+        setBulkError(
+          `${failedCount} image${failedCount === 1 ? "" : "s"} could not be approved and remain in the queue.`,
+        );
+      }
+    } catch (error) {
+      setBulkError(
+        error instanceof Error
+          ? error.message
+          : "Could not approve the image queue.",
+      );
+    } finally {
+      setBulkApproving(false);
+    }
+  }
+
   if (queueState === "signed_out") {
     return (
       <main className="page-main moderation-page">
@@ -465,6 +549,34 @@ export default function Moderation() {
       {notice && (
         <p className="moderation-notice" role="status">
           {notice}
+        </p>
+      )}
+
+      {queueState === "ready" && imageCases.length > 0 && (
+        <section className="moderation-bulk-actions" aria-label="Image queue actions">
+          <div>
+            <span className="eyebrow">IMAGE QUEUE</span>
+            <strong>
+              {imageCases.length} image{imageCases.length === 1 ? "" : "s"} waiting
+            </strong>
+            <p>Approve this current set of quarantined images in one action.</p>
+          </div>
+          <button
+            type="button"
+            className="moderation-approve-button moderation-bulk-approve"
+            disabled={bulkApproving || reviewing !== null}
+            onClick={() => void bulkApproveImages()}
+          >
+            {bulkApproving
+              ? "Approving images…"
+              : `Approve all images (${imageCases.length})`}
+          </button>
+        </section>
+      )}
+
+      {bulkError && (
+        <p className="moderation-bulk-error" role="alert">
+          {bulkError}
         </p>
       )}
 
