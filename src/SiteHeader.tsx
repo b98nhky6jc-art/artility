@@ -3,9 +3,9 @@ import { Link, useLocation } from "react-router";
 import "./App.css";
 import { authClient } from "./lib/auth-client";
 
-function scrollToNearby() {
+function scrollToNearby(behavior: ScrollBehavior = "smooth") {
   document.getElementById("nearby")?.scrollIntoView({
-    behavior: "smooth",
+    behavior,
     block: "start",
   });
 }
@@ -19,9 +19,30 @@ export default function SiteHeader() {
       return;
     }
 
-    const timeout = window.setTimeout(scrollToNearby, 0);
+    const nearby = document.getElementById("nearby");
 
-    return () => window.clearTimeout(timeout);
+    if (!nearby) {
+      return;
+    }
+
+    const initialScroll = window.setTimeout(scrollToNearby, 0);
+    const layoutObserver = new ResizeObserver(() => {
+      if (Math.abs(nearby.getBoundingClientRect().top) > 1) {
+        scrollToNearby("auto");
+      }
+    });
+    const stopObserving = window.setTimeout(
+      () => layoutObserver.disconnect(),
+      2000,
+    );
+
+    layoutObserver.observe(document.body);
+
+    return () => {
+      window.clearTimeout(initialScroll);
+      window.clearTimeout(stopObserving);
+      layoutObserver.disconnect();
+    };
   }, [location.hash, location.pathname]);
 
   const isArtists = location.pathname.startsWith("/artist");
