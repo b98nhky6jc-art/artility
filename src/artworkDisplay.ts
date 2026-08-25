@@ -1,3 +1,5 @@
+import { formatInfrastructureType } from "../shared/infrastructure-types";
+
 type ArtworkDisplayInfo = {
   id?: number;
   title: string | null;
@@ -5,10 +7,6 @@ type ArtworkDisplayInfo = {
   city?: string | null;
   town?: string | null;
 };
-
-function capitalise(value: string) {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
 
 export function getArtworkDisplayTitle(
   artwork: ArtworkDisplayInfo,
@@ -23,11 +21,11 @@ export function getArtworkDisplayTitle(
   const place = artwork.city?.trim() || artwork.town?.trim();
 
   if (type && place) {
-    return `${capitalise(type)} in ${place}`;
+    return `${formatInfrastructureType(type)} in ${place}`;
   }
 
   if (type) {
-    return capitalise(type);
+    return formatInfrastructureType(type);
   }
 
   if (place) {

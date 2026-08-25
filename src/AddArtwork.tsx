@@ -7,6 +7,10 @@ import { getArtworkDisplayTitle } from "./artworkDisplay";
 import { authClient } from "./lib/auth-client";
 import EmailVerificationNotice from "./EmailVerificationNotice";
 import { canUserContribute } from "./emailVerification";
+import {
+  INFRASTRUCTURE_TYPES,
+  type InfrastructureType,
+} from "../shared/infrastructure-types";
 
 type Stage = "upload" | "review" | "submitted";
 type UploadModerationNotice = "review" | "rejected";
@@ -300,7 +304,7 @@ export default function AddArtwork() {
   const [instagramHandle, setInstagramHandle] = useState("");
   const [description, setDescription] = useState("");
   const [infrastructureType, setInfrastructureType] =
-    useState("utility cabinet");
+    useState<InfrastructureType>("Utility box / cabinet");
 
   const [latitude, setLatitude] = useState<number | null>(null);
   const [longitude, setLongitude] = useState<number | null>(null);
@@ -704,20 +708,20 @@ export default function AddArtwork() {
                 </label>
 
                 <label>
-                  Type
+                  Artwork setting
                   <select
                     value={infrastructureType}
                     onChange={(event) =>
-                      setInfrastructureType(event.target.value)
+                      setInfrastructureType(
+                        event.target.value as InfrastructureType,
+                      )
                     }
                   >
-                    <option value="utility cabinet">Utility cabinet</option>
-
-                    <option value="street cabinet">Street cabinet</option>
-
-                    <option value="bollard">Bollard</option>
-
-                    <option value="other">Other</option>
+                    {INFRASTRUCTURE_TYPES.map((type) => (
+                      <option value={type} key={type}>
+                        {type}
+                      </option>
+                    ))}
                   </select>
                 </label>
 

@@ -14,6 +14,7 @@ import {
   requestBrowserLocation,
   type UserLocation,
 } from "./artworkDiscovery";
+import { formatInfrastructureType } from "../shared/infrastructure-types";
 
 
 type Artwork = {
@@ -184,7 +185,7 @@ function App() {
                     </p>
 
                     <p className="metadata">
-                      {artwork.infrastructure_type}
+                      {formatInfrastructureType(artwork.infrastructure_type)}
                       {artwork.city ? ` · ${artwork.city}` : ""}
                     </p>
 

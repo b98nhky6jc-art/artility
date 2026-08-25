@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import "./App.css";
 import { getArtworkDisplayTitle } from "./artworkDisplay";
+import { formatInfrastructureType } from "../shared/infrastructure-types";
 
 type Artist = {
   id: number;
@@ -174,7 +175,7 @@ export default function ArtistDetail() {
                   <p>
                     {artwork.town ||
                       artwork.city ||
-                      artwork.infrastructure_type}
+                      formatInfrastructureType(artwork.infrastructure_type)}
                   </p>
                 </div>
               </Link>

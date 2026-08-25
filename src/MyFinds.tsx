@@ -6,6 +6,7 @@ import { getArtworkDisplayTitle } from "./artworkDisplay";
 import ArtistAttribution from "./ArtistAttribution";
 import EmailVerificationNotice from "./EmailVerificationNotice";
 import { canUserContribute } from "./emailVerification";
+import { formatInfrastructureType } from "../shared/infrastructure-types";
 
 type Find = {
   instagram_handle: string | null;
@@ -188,7 +189,7 @@ export default function MyFinds() {
                     </p>
 
                     <p className="metadata">
-                      {artwork.infrastructure_type}
+                      {formatInfrastructureType(artwork.infrastructure_type)}
                       {artwork.city ? ` · ${artwork.city}` : ""}
                     </p>
 

@@ -10,6 +10,7 @@ import {
   type PreparedImage,
 } from "./image-processing.js";
 import { moderateImage } from "./image-moderation.js";
+import { normaliseInfrastructureType } from "../shared/infrastructure-types.js";
 
 const MAX_PHOTOS_PER_ARTWORK = 3;
 const MAX_STATUS_REPORT_NOTE_LENGTH = 1000;
@@ -1208,9 +1209,9 @@ export default {
           formData.get("description") ?? "",
         ).trim();
 
-        const infrastructureType = String(
+        const infrastructureType = normaliseInfrastructureType(
           formData.get("infrastructure_type") ?? "",
-        ).trim();
+        );
 
         const latitude = Number(formData.get("latitude"));
         const longitude = Number(formData.get("longitude"));
@@ -1234,7 +1235,7 @@ export default {
 
         if (!infrastructureType) {
           return Response.json(
-            { error: "Infrastructure type is required" },
+            { error: "Choose a valid artwork setting" },
             { status: 400 },
           );
         }
@@ -2289,14 +2290,16 @@ if (artworkDetailMatch && request.method === "GET") {
           current.description,
         );
 
-        const infrastructureType = readText(
-          "infrastructure_type",
-          current.infrastructure_type,
+        const infrastructureType = normaliseInfrastructureType(
+          readText(
+            "infrastructure_type",
+            current.infrastructure_type,
+          ),
         );
 
         if (!infrastructureType) {
           return Response.json(
-            { error: "Infrastructure type is required" },
+            { error: "Choose a valid artwork setting" },
             { status: 400 },
           );
         }

@@ -7,6 +7,12 @@ import ArtistAttribution from "./ArtistAttribution";
 import { authClient } from "./lib/auth-client";
 import EmailVerificationNotice from "./EmailVerificationNotice";
 import { canUserContribute } from "./emailVerification";
+import {
+  formatInfrastructureType,
+  INFRASTRUCTURE_TYPES,
+  normaliseInfrastructureType,
+  type InfrastructureType,
+} from "../shared/infrastructure-types";
 
 
 type Artwork = {
@@ -166,7 +172,7 @@ export default function ArtworkDetail() {
   const [editInstagramHandle, setEditInstagramHandle] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editInfrastructureType, setEditInfrastructureType] =
-    useState("");
+    useState<InfrastructureType>("Utility box / cabinet");
 
   const [reportingOpen, setReportingOpen] = useState(false);
   const [reportType, setReportType] = useState("");
@@ -186,7 +192,9 @@ export default function ArtworkDetail() {
     setEditArtistName(artwork.artist_name ?? "");
     setEditInstagramHandle(artwork.instagram_handle ?? "");
     setEditDescription(artwork.description ?? "");
-    setEditInfrastructureType(artwork.infrastructure_type ?? "");
+    setEditInfrastructureType(
+      normaliseInfrastructureType(artwork.infrastructure_type) ?? "Other",
+    );
 
     setEditError("");
     setEditing(true);
@@ -196,11 +204,6 @@ export default function ArtworkDetail() {
     event.preventDefault();
 
     if (!artwork) {
-      return;
-    }
-
-    if (!editInfrastructureType.trim()) {
-      setEditError("Infrastructure type is required.");
       return;
     }
 
@@ -570,7 +573,7 @@ export default function ArtworkDetail() {
               )}
             </div>
 
-            <h1>{artwork.title?.trim() || "Utility cabinet"}</h1>
+            <h1>{getArtworkDisplayTitle(artwork)}</h1>
 
             <ArtistAttribution
               artistName={artwork.artist_name}
@@ -578,7 +581,7 @@ export default function ArtworkDetail() {
             />
 
             <p className="detail-meta">
-              {artwork.infrastructure_type}
+              {formatInfrastructureType(artwork.infrastructure_type)}
               {artwork.city ? ` · ${artwork.city}` : ""}
             </p>
             {session?.user && !canContribute && (
@@ -649,15 +652,22 @@ export default function ArtworkDetail() {
                 </label>
 
                 <label>
-                  Infrastructure type
-                  <input
-                    type="text"
+                  Artwork setting
+                  <select
                     required
                     value={editInfrastructureType}
                     onChange={(event) =>
-                      setEditInfrastructureType(event.target.value)
+                      setEditInfrastructureType(
+                        event.target.value as InfrastructureType,
+                      )
                     }
-                  />
+                  >
+                    {INFRASTRUCTURE_TYPES.map((type) => (
+                      <option value={type} key={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
                 </label>
 
                 <label>
