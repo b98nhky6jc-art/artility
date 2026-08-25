@@ -1,4 +1,8 @@
-import { createAuth } from "./auth.js";
+import {
+  continueEmailNotificationDelivery,
+  createAuth,
+  queueArtworkStatusReportAlert,
+} from "./auth.js";
 
 const MAX_PHOTOS_PER_ARTWORK = 3;
 
@@ -113,6 +117,8 @@ export default {
     ctx: ExecutionContext,
   ): Promise<Response> {
     const url = new URL(request.url);
+
+    continueEmailNotificationDelivery(env, ctx);
 
     const auth = createAuth(env, ctx);
 
@@ -1374,11 +1380,14 @@ photos.created_at AS photo_added_at
           )
           .run();
 
+        const reportId = Number(inserted.meta.last_row_id);
+        queueArtworkStatusReportAlert(env, ctx, reportId);
+
         return Response.json(
           {
             success: true,
             report: {
-              id: Number(inserted.meta.last_row_id),
+              id: reportId,
               artwork_id: artworkId,
               report_type: reportType,
               date_observed: dateObserved,

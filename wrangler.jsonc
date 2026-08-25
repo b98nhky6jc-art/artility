@@ -28,7 +28,7 @@
   "upload_source_maps": true,
   "vars": {
     "ADMIN_EMAILS": "hello@artility.co.uk,temorris@me.com",
-    "REGISTRATION_ALERT_EMAIL": "hello@artility.co.uk"
+    "ALERT_EMAILS": "hello@artility.co.uk,temorris@me.com"
   },
   "d1_databases": [
     {
