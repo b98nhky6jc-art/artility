@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useLocation, useParams } from "react-router";
 import ArtworkMap from "./ArtworkMap";
 import "./App.css";
 import { getArtworkDisplayTitle } from "./artworkDisplay";
@@ -122,6 +122,12 @@ function calculateDistanceMetres(
 }
 
 export default function ArtworkDetail() {
+  const location = useLocation();
+  const uploadModeration = (
+    location.state as {
+      uploadModeration?: "review" | "rejected" | null;
+    } | null
+  )?.uploadModeration;
 
   const { id } = useParams();
   const [photos, setPhotos] = useState<ArtworkPhoto[]>([]);
@@ -492,6 +498,19 @@ export default function ArtworkDetail() {
       </header>
 
       <main className="detail-main">
+        {uploadModeration === "review" && (
+          <p className="status-report-success upload-moderation-notice" role="status">
+            Your artwork details are saved. One or more images are private
+            while a moderator reviews them.
+          </p>
+        )}
+        {uploadModeration === "rejected" && (
+          <p className="status-report-requirement upload-moderation-notice" role="status">
+            Your artwork details are saved, but an image was not published
+            because it did not pass the upload safety check.
+          </p>
+        )}
+
         <section className="detail-hero">
           <div className="detail-photo-wrap">
             {photos.length > 0 && (

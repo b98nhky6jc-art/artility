@@ -3,10 +3,14 @@ import {
   createAuth,
   queueArtworkStatusReportAlert,
 } from "./auth.js";
+import {
+  ImageUploadError,
+  prepareImageUpload,
+  type PreparedImage,
+} from "./image-processing.js";
+import { moderateImage } from "./image-moderation.js";
 
 const MAX_PHOTOS_PER_ARTWORK = 3;
-
-const MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024;
 const MAX_STATUS_REPORT_NOTE_LENGTH = 1000;
 const STATUS_REPORT_TYPES = new Set([
   "no_longer_there",
@@ -17,11 +21,289 @@ const STATUS_REPORT_TYPES = new Set([
 const EMAIL_VERIFICATION_CUTOFF = Date.parse(
   "2026-08-24T22:10:00.000Z",
 );
-const ALLOWED_IMAGE_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-]);
+type ArtworkPhotoModerationState =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "manual_review";
+
+async function enforceImageUploadRateLimit(
+  env: Env,
+  userId: string,
+  requestedCount: number,
+) {
+  const usage = await env.DB.prepare(`
+    SELECT
+      COALESCE(SUM(CASE
+        WHEN created_at >= datetime('now', '-1 hour') THEN image_count
+        ELSE 0
+      END), 0) AS hour_count,
+      COALESCE(SUM(image_count), 0) AS day_count
+    FROM image_upload_events
+    WHERE user_id = ?
+      AND created_at >= datetime('now', '-1 day')
+  `)
+    .bind(userId)
+    .first<{ hour_count: number; day_count: number }>();
+  const hourCount = Number(usage?.hour_count ?? 0);
+  const dayCount = Number(usage?.day_count ?? 0);
+
+  if (hourCount + requestedCount > 12 || dayCount + requestedCount > 30) {
+    throw new ImageUploadError(
+      "Upload limit reached. Please wait before adding more images.",
+      429,
+    );
+  }
+
+  await env.DB.prepare(`
+    INSERT INTO image_upload_events (user_id, image_count)
+    VALUES (?, ?)
+  `)
+    .bind(userId, requestedCount)
+    .run();
+}
+
+async function ensureApprovedPrimaryPhoto(env: Env, artworkId: number) {
+  const primary = await env.DB.prepare(`
+    SELECT id
+    FROM photos
+    WHERE artwork_id = ?
+      AND moderation_state = 'approved'
+      AND is_primary = 1
+    LIMIT 1
+  `)
+    .bind(artworkId)
+    .first();
+
+  if (primary) {
+    return;
+  }
+
+  const fallback = await env.DB.prepare(`
+    SELECT id
+    FROM photos
+    WHERE artwork_id = ?
+      AND moderation_state = 'approved'
+    ORDER BY id ASC
+    LIMIT 1
+  `)
+    .bind(artworkId)
+    .first<{ id: number }>();
+
+  if (fallback) {
+    await env.DB.batch([
+      env.DB.prepare(`
+        UPDATE photos SET is_primary = 0 WHERE artwork_id = ?
+      `).bind(artworkId),
+      env.DB.prepare(`
+        UPDATE photos SET is_primary = 1 WHERE id = ?
+      `).bind(fallback.id),
+    ]);
+  }
+}
+
+async function publishArtworkPhoto(
+  env: Env,
+  photoId: number,
+  reviewedBy: string | null = null,
+) {
+  const photo = await env.DB.prepare(`
+    SELECT id, artwork_id, storage_key, thumbnail_key, moderation_state
+    FROM photos
+    WHERE id = ?
+    LIMIT 1
+  `)
+    .bind(photoId)
+    .first<{
+      id: number;
+      artwork_id: number;
+      storage_key: string;
+      thumbnail_key: string | null;
+      moderation_state: ArtworkPhotoModerationState;
+    }>();
+
+  if (!photo) {
+    throw new Error("Artwork photo was not found");
+  }
+
+  if (photo.moderation_state === "approved") {
+    return photo;
+  }
+
+  const source = await env.IMAGES.get(photo.storage_key);
+  const sourceThumbnail = photo.thumbnail_key
+    ? await env.IMAGES.get(photo.thumbnail_key)
+    : null;
+
+  if (!source || !sourceThumbnail) {
+    throw new Error("Quarantined image data is unavailable");
+  }
+
+  const publicKey = `artworks/${photo.artwork_id}/photo-${photo.id}.jpg`;
+  const publicThumbnailKey =
+    `artworks/${photo.artwork_id}/photo-${photo.id}-thumb.jpg`;
+
+  await Promise.all([
+    env.IMAGES.put(publicKey, await source.arrayBuffer(), {
+      httpMetadata: { contentType: "image/jpeg" },
+    }),
+    env.IMAGES.put(publicThumbnailKey, await sourceThumbnail.arrayBuffer(), {
+      httpMetadata: { contentType: "image/jpeg" },
+    }),
+  ]);
+
+  const update = await env.DB.prepare(`
+    UPDATE photos
+    SET storage_key = ?,
+        thumbnail_key = ?,
+        moderation_state = 'approved',
+        reviewed_by = COALESCE(?, reviewed_by),
+        reviewed_at = CASE WHEN ? IS NULL THEN reviewed_at ELSE CURRENT_TIMESTAMP END,
+        published_at = CURRENT_TIMESTAMP,
+        moderation_last_error = NULL
+    WHERE id = ?
+      AND moderation_state IN ('pending', 'manual_review')
+  `)
+    .bind(publicKey, publicThumbnailKey, reviewedBy, reviewedBy, photoId)
+    .run();
+
+  if (Number(update.meta.changes ?? 0) !== 1) {
+    await Promise.all([
+      env.IMAGES.delete(publicKey),
+      env.IMAGES.delete(publicThumbnailKey),
+    ]);
+    throw new Error("This image was reviewed by someone else");
+  }
+
+  await Promise.all([
+    env.IMAGES.delete(photo.storage_key),
+    photo.thumbnail_key
+      ? env.IMAGES.delete(photo.thumbnail_key)
+      : Promise.resolve(),
+  ]);
+  await ensureApprovedPrimaryPhoto(env, photo.artwork_id);
+
+  return { ...photo, storage_key: publicKey, thumbnail_key: publicThumbnailKey };
+}
+
+async function quarantineAndModerateArtworkPhoto(
+  env: Env,
+  artworkId: number,
+  userId: string,
+  file: File,
+  isPrimary: boolean,
+  preparedImage?: PreparedImage,
+) {
+  const image = preparedImage ?? (await prepareImageUpload(file));
+  const uploadId = crypto.randomUUID();
+  const quarantineKey = `quarantine/artworks/${artworkId}/${uploadId}.jpg`;
+  const quarantineThumbnailKey =
+    `quarantine/artworks/${artworkId}/${uploadId}-thumb.jpg`;
+
+  await Promise.all([
+    env.IMAGES.put(quarantineKey, image.bytes, {
+      httpMetadata: { contentType: image.storedMimeType },
+    }),
+    env.IMAGES.put(quarantineThumbnailKey, image.thumbnailBytes, {
+      httpMetadata: { contentType: image.storedMimeType },
+    }),
+  ]);
+
+  let photoId: number;
+
+  try {
+    const inserted = await env.DB.prepare(`
+      INSERT INTO photos (
+        artwork_id,
+        storage_key,
+        thumbnail_key,
+        is_primary,
+        uploaded_by,
+        moderation_state,
+        source_mime_type,
+        stored_mime_type,
+        width,
+        height,
+        byte_size
+      )
+      VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
+    `)
+      .bind(
+        artworkId,
+        quarantineKey,
+        quarantineThumbnailKey,
+        isPrimary ? 1 : 0,
+        userId,
+        image.sourceMimeType,
+        image.storedMimeType,
+        image.width,
+        image.height,
+        image.bytes.byteLength,
+      )
+      .run();
+    photoId = Number(inserted.meta.last_row_id);
+  } catch (error) {
+    await Promise.all([
+      env.IMAGES.delete(quarantineKey),
+      env.IMAGES.delete(quarantineThumbnailKey),
+    ]);
+    throw error;
+  }
+
+  const decision = await moderateImage(env.OPENAI_API_KEY, image);
+  const state: ArtworkPhotoModerationState =
+    decision.outcome === "approve"
+      ? "pending"
+      : decision.outcome === "reject"
+        ? "rejected"
+        : "manual_review";
+
+  await env.DB.prepare(`
+    UPDATE photos
+    SET moderation_state = ?,
+        moderation_provider = ?,
+        moderation_model = ?,
+        moderation_request_id = ?,
+        moderation_reason = ?,
+        moderation_categories = ?,
+        moderation_scores = ?,
+        moderation_attempt_count = moderation_attempt_count + 1,
+        moderation_last_error = ?
+    WHERE id = ?
+  `)
+    .bind(
+      state,
+      decision.provider,
+      decision.model,
+      decision.requestId,
+      decision.reason,
+      JSON.stringify(decision.categories),
+      JSON.stringify(decision.scores),
+      decision.error,
+      photoId,
+    )
+    .run();
+
+  if (decision.outcome === "approve") {
+    try {
+      await publishArtworkPhoto(env, photoId);
+      return { id: photoId, state: "approved" as const };
+    } catch (error) {
+      await env.DB.prepare(`
+        UPDATE photos
+        SET moderation_state = 'manual_review',
+            moderation_reason = 'Publishing failed after automated approval.',
+            moderation_last_error = ?
+        WHERE id = ?
+      `)
+        .bind(error instanceof Error ? error.message : "Unknown publish error", photoId)
+        .run();
+      return { id: photoId, state: "manual_review" as const };
+    }
+  }
+
+  return { id: photoId, state };
+}
 
 function isValidObservedDate(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
@@ -35,18 +317,6 @@ function isValidObservedDate(value: string) {
     parsed.toISOString().slice(0, 10) === value &&
     value <= new Date().toISOString().slice(0, 10)
   );
-}
-
-function getImageExtension(contentType: string) {
-  if (contentType === "image/png") {
-    return "png";
-  }
-
-  if (contentType === "image/webp") {
-    return "webp";
-  }
-
-  return "jpg";
 }
 
 function createVerificationLandingResponse(
@@ -269,6 +539,59 @@ export default {
       });
     }
 
+    const privateModerationImageMatch = url.pathname.match(
+      /^\/api\/admin\/moderation\/images\/(artwork-photo|artwork-status-report)\/(\d+)$/,
+    );
+
+    if (privateModerationImageMatch && request.method === "GET") {
+      const access = await requireModerator();
+
+      if (!access.ok) {
+        return access.response;
+      }
+
+      const caseType = privateModerationImageMatch[1];
+      const recordId = Number(privateModerationImageMatch[2]);
+      const record =
+        caseType === "artwork-photo"
+          ? await env.DB.prepare(`
+              SELECT storage_key
+              FROM photos
+              WHERE id = ?
+                AND moderation_state = 'manual_review'
+              LIMIT 1
+            `)
+              .bind(recordId)
+              .first<{ storage_key: string }>()
+          : await env.DB.prepare(`
+              SELECT photo_storage_key AS storage_key
+              FROM artwork_status_reports
+              WHERE id = ?
+                AND moderation_state = 'pending'
+                AND photo_storage_key IS NOT NULL
+              LIMIT 1
+            `)
+              .bind(recordId)
+              .first<{ storage_key: string }>();
+
+      if (!record) {
+        return new Response("Image not found", { status: 404 });
+      }
+
+      const object = await env.IMAGES.get(record.storage_key);
+
+      if (!object) {
+        return new Response("Image not found", { status: 404 });
+      }
+
+      const headers = new Headers();
+      object.writeHttpMetadata(headers);
+      headers.set("cache-control", "private, no-store");
+      headers.set("x-content-type-options", "nosniff");
+
+      return new Response(object.body, { headers });
+    }
+
     if (
       url.pathname === "/api/admin/moderation/cases" &&
       request.method === "GET"
@@ -279,26 +602,27 @@ export default {
         return access.response;
       }
 
-      const requestedState = url.searchParams.get("state") ?? "pending";
-      const requestedType =
-        url.searchParams.get("type") ?? "artwork_status_report";
+      const requestedType = url.searchParams.get("type") ?? "all";
+      const supportedTypes = new Set([
+        "all",
+        "artwork_status_report",
+        "artwork_photo",
+      ]);
 
-      if (requestedState !== "pending") {
+      if (!supportedTypes.has(requestedType)) {
         return Response.json(
-          { error: "Only the pending moderation queue is available" },
+          { error: "Unknown moderation case type" },
           { status: 400 },
         );
       }
 
-      if (requestedType !== "artwork_status_report") {
-        return Response.json({
-          items: [],
-          state: requestedState,
-          type: requestedType,
-        });
-      }
+      const items: Array<Record<string, unknown>> = [];
 
-      const reports = await env.DB.prepare(`
+      if (
+        requestedType === "all" ||
+        requestedType === "artwork_status_report"
+      ) {
+        const reports = await env.DB.prepare(`
         SELECT
           reports.id,
           reports.artwork_id,
@@ -325,7 +649,7 @@ export default {
           ON reporter.id = reports.reporting_user_id
         WHERE reports.moderation_state = 'pending'
         ORDER BY reports.created_at ASC, reports.id ASC
-      `).all<{
+        `).all<{
         id: number;
         artwork_id: number;
         report_type: string;
@@ -342,37 +666,142 @@ export default {
         artwork_current_status: string;
         reporter_name: string | null;
         reporter_email: string | null;
-      }>();
+        }>();
+
+        items.push(
+          ...reports.results.map((report) => ({
+            id: `artwork_status_report:${report.id}`,
+            case_type: "artwork_status_report",
+            state: report.moderation_state,
+            created_at: report.created_at,
+            subject: {
+              type: "artwork",
+              id: report.artwork_id,
+              title: report.artwork_title,
+              town: report.artwork_town,
+              city: report.artwork_city,
+              current_status: report.artwork_current_status,
+            },
+            reporter: {
+              id: report.reporting_user_id,
+              name: report.reporter_name,
+              email: report.reporter_email,
+            },
+            payload: {
+              report_id: report.id,
+              report_type: report.report_type,
+              date_observed: report.date_observed,
+              note: report.note,
+              photo_storage_key: report.photo_storage_key,
+              replacement_artwork_id: report.replacement_artwork_id,
+            },
+          })),
+        );
+      }
+
+      if (requestedType === "all" || requestedType === "artwork_photo") {
+        const photos = await env.DB.prepare(`
+          SELECT
+            photos.id,
+            photos.artwork_id,
+            photos.uploaded_by,
+            photos.moderation_state,
+            photos.moderation_provider,
+            photos.moderation_model,
+            photos.moderation_reason,
+            photos.moderation_categories,
+            photos.moderation_scores,
+            photos.moderation_last_error,
+            photos.source_mime_type,
+            photos.stored_mime_type,
+            photos.width,
+            photos.height,
+            photos.byte_size,
+            photos.created_at,
+            artworks.title AS artwork_title,
+            artworks.town AS artwork_town,
+            artworks.city AS artwork_city,
+            effective_status.status AS artwork_current_status,
+            uploader.name AS reporter_name,
+            uploader.email AS reporter_email
+          FROM photos
+          INNER JOIN artworks
+            ON artworks.id = photos.artwork_id
+          INNER JOIN artwork_effective_statuses AS effective_status
+            ON effective_status.artwork_id = artworks.id
+          LEFT JOIN "user" AS uploader
+            ON uploader.id = photos.uploaded_by
+          WHERE photos.moderation_state = 'manual_review'
+          ORDER BY photos.created_at ASC, photos.id ASC
+        `).all<{
+          id: number;
+          artwork_id: number;
+          uploaded_by: string | null;
+          moderation_state: "manual_review";
+          moderation_provider: string | null;
+          moderation_model: string | null;
+          moderation_reason: string | null;
+          moderation_categories: string | null;
+          moderation_scores: string | null;
+          moderation_last_error: string | null;
+          source_mime_type: string | null;
+          stored_mime_type: string | null;
+          width: number | null;
+          height: number | null;
+          byte_size: number | null;
+          created_at: string;
+          artwork_title: string | null;
+          artwork_town: string | null;
+          artwork_city: string | null;
+          artwork_current_status: string;
+          reporter_name: string | null;
+          reporter_email: string | null;
+        }>();
+
+        items.push(
+          ...photos.results.map((photo) => ({
+            id: `artwork_photo:${photo.id}`,
+            case_type: "artwork_photo",
+            state: photo.moderation_state,
+            created_at: photo.created_at,
+            subject: {
+              type: "artwork",
+              id: photo.artwork_id,
+              title: photo.artwork_title,
+              town: photo.artwork_town,
+              city: photo.artwork_city,
+              current_status: photo.artwork_current_status,
+            },
+            reporter: {
+              id: photo.uploaded_by,
+              name: photo.reporter_name,
+              email: photo.reporter_email,
+            },
+            payload: {
+              photo_id: photo.id,
+              reason: photo.moderation_reason,
+              provider: photo.moderation_provider,
+              model: photo.moderation_model,
+              categories: photo.moderation_categories,
+              scores: photo.moderation_scores,
+              moderation_error: photo.moderation_last_error,
+              source_mime_type: photo.source_mime_type,
+              stored_mime_type: photo.stored_mime_type,
+              width: photo.width,
+              height: photo.height,
+              byte_size: photo.byte_size,
+            },
+          })),
+        );
+      }
+
+      items.sort((left, right) =>
+        String(left.created_at).localeCompare(String(right.created_at)),
+      );
 
       return Response.json({
-        items: reports.results.map((report) => ({
-          id: `artwork_status_report:${report.id}`,
-          case_type: "artwork_status_report",
-          state: report.moderation_state,
-          created_at: report.created_at,
-          subject: {
-            type: "artwork",
-            id: report.artwork_id,
-            title: report.artwork_title,
-            town: report.artwork_town,
-            city: report.artwork_city,
-            current_status: report.artwork_current_status,
-          },
-          reporter: {
-            id: report.reporting_user_id,
-            name: report.reporter_name,
-            email: report.reporter_email,
-          },
-          payload: {
-            report_id: report.id,
-            report_type: report.report_type,
-            date_observed: report.date_observed,
-            note: report.note,
-            photo_storage_key: report.photo_storage_key,
-            replacement_artwork_id: report.replacement_artwork_id,
-          },
-        })),
-        state: requestedState,
+        items,
+        state: "open",
         type: requestedType,
       });
     }
@@ -485,6 +914,108 @@ export default {
       });
     }
 
+    const imageModerationDecisionMatch = url.pathname.match(
+      /^\/api\/admin\/moderation\/cases\/artwork-photo\/(\d+)\/decision$/,
+    );
+
+    if (imageModerationDecisionMatch && request.method === "POST") {
+      const access = await requireModerator();
+
+      if (!access.ok) {
+        return access.response;
+      }
+
+      let body: { decision?: unknown };
+
+      try {
+        body = (await request.json()) as { decision?: unknown };
+      } catch {
+        return Response.json(
+          { error: "Decision must be valid JSON" },
+          { status: 400 },
+        );
+      }
+
+      if (body.decision !== "approved" && body.decision !== "rejected") {
+        return Response.json(
+          { error: "Decision must be approved or rejected" },
+          { status: 400 },
+        );
+      }
+
+      const photoId = Number(imageModerationDecisionMatch[1]);
+      const photo = await env.DB.prepare(`
+        SELECT id, artwork_id, moderation_state
+        FROM photos
+        WHERE id = ?
+        LIMIT 1
+      `)
+        .bind(photoId)
+        .first<{
+          id: number;
+          artwork_id: number;
+          moderation_state: ArtworkPhotoModerationState;
+        }>();
+
+      if (!photo) {
+        return Response.json(
+          { error: "Moderation case not found" },
+          { status: 404 },
+        );
+      }
+
+      if (photo.moderation_state !== "manual_review") {
+        return Response.json(
+          {
+            error: `This image is already ${photo.moderation_state}`,
+            code: "ALREADY_REVIEWED",
+          },
+          { status: 409 },
+        );
+      }
+
+      if (body.decision === "approved") {
+        await publishArtworkPhoto(env, photoId, access.userId);
+      } else {
+        const update = await env.DB.prepare(`
+          UPDATE photos
+          SET moderation_state = 'rejected',
+              reviewed_by = ?,
+              reviewed_at = CURRENT_TIMESTAMP,
+              moderation_reason = COALESCE(
+                moderation_reason || ' ',
+                ''
+              ) || 'Rejected by a moderator.'
+          WHERE id = ?
+            AND moderation_state = 'manual_review'
+        `)
+          .bind(access.userId, photoId)
+          .run();
+
+        if (Number(update.meta.changes ?? 0) !== 1) {
+          return Response.json(
+            {
+              error: "This image was reviewed by someone else",
+              code: "ALREADY_REVIEWED",
+            },
+            { status: 409 },
+          );
+        }
+
+        await ensureApprovedPrimaryPhoto(env, photo.artwork_id);
+      }
+
+      return Response.json({
+        success: true,
+        case: {
+          id: `artwork_photo:${photo.id}`,
+          case_type: "artwork_photo",
+          state: body.decision,
+          artwork_id: photo.artwork_id,
+        },
+      });
+    }
+
     if (url.pathname === "/api/artworks" && request.method === "POST") {
       try {
 
@@ -528,9 +1059,6 @@ export default {
         const photos = formData
           .getAll("photos")
           .filter((value): value is File => value instanceof File);
-        const thumbnails = formData
-          .getAll("thumbnails")
-          .filter((value): value is File => value instanceof File);
 
         if (
           !Number.isFinite(latitude) ||
@@ -564,46 +1092,10 @@ export default {
             { status: 400 },
           );
         }
-        if (
-          thumbnails.length > 0 &&
-          thumbnails.length !== photos.length
-        ) {
-          return Response.json(
-            { error: "Thumbnail count does not match photo count." },
-            { status: 400 },
-          );
-        }
-        for (const thumbnail of thumbnails) {
-          if (thumbnail.type !== "image/jpeg") {
-            return Response.json(
-              { error: "Thumbnail must be a JPEG image." },
-              { status: 400 },
-            );
-          }
-
-          if (thumbnail.size > 2 * 1024 * 1024) {
-            return Response.json(
-              { error: "Thumbnail is unexpectedly large." },
-              { status: 400 },
-            );
-          }
-        }
-
-        for (const photo of photos) {
-          if (!ALLOWED_IMAGE_TYPES.has(photo.type)) {
-            return Response.json(
-              { error: "Unsupported image type." },
-              { status: 400 },
-            );
-          }
-
-          if (photo.size > MAX_IMAGE_SIZE_BYTES) {
-            return Response.json(
-              { error: "Each photo must be smaller than 8 MB." },
-              { status: 400 },
-            );
-          }
-        }
+        await enforceImageUploadRateLimit(env, userId, photos.length);
+        const preparedPhotos = await Promise.all(
+          photos.map((photo) => prepareImageUpload(photo)),
+        );
 
         let artistId: number | null = null;
 
@@ -707,68 +1199,25 @@ export default {
           artworkInsert.meta.last_row_id
         );
 
+        const moderation = [];
+
         for (let index = 0; index < photos.length; index++) {
-          const photo = photos[index];
-
-          const extension =
-            photo.name.split(".").pop()?.toLowerCase() || "jpg";
-
-          const safeExtension =
-            extension.replace(/[^a-z0-9]/g, "") || "jpg";
-
-          const storageKey =
-            `artworks/${artworkId}/photo-${index + 1}.${safeExtension}`;
-          const thumbnail = thumbnails[index] ?? null;
-
-          const thumbnailKey = thumbnail
-            ? `artworks/${artworkId}/photo-${index + 1}-thumb.jpg`
-            : null;
-          if (thumbnail && thumbnailKey) {
-            await env.IMAGES.put(
-              thumbnailKey,
-              thumbnail.stream(),
-              {
-                httpMetadata: {
-                  contentType: "image/jpeg",
-                },
-              },
-            );
-          }
-
-          await env.IMAGES.put(
-            storageKey,
-            photo.stream(),
-            {
-              httpMetadata: {
-                contentType:
-                  photo.type || "application/octet-stream",
-              },
-            }
-          );
-
-          await env.DB.prepare(`
-  INSERT INTO photos (
-    artwork_id,
-    storage_key,
-    thumbnail_key,
-    is_primary,
-    uploaded_by
-  )
-  VALUES (?, ?, ?, ?, ?)
-`)
-            .bind(
+          moderation.push(
+            await quarantineAndModerateArtworkPhoto(
+              env,
               artworkId,
-              storageKey,
-              thumbnailKey,
-              index === 0 ? 1 : 0,
               userId,
-            )
-            .run();
+              photos[index],
+              index === 0,
+              preparedPhotos[index],
+            ),
+          );
         }
 
         return Response.json(
           {
             id: artworkId,
+            image_moderation: moderation,
           },
           {
             status: 201,
@@ -776,6 +1225,17 @@ export default {
         );
       } catch (error) {
         console.error("Artwork upload failed:", error);
+
+        if (error instanceof ImageUploadError) {
+          return Response.json(
+            { error: error.message },
+            {
+              status: error.status,
+              headers:
+                error.status === 429 ? { "retry-after": "3600" } : undefined,
+            },
+          );
+        }
 
         return Response.json(
           {
@@ -834,6 +1294,7 @@ export default {
       SELECT COUNT(*)
       FROM photos AS artwork_photos
       WHERE artwork_photos.artwork_id = artworks.id
+        AND artwork_photos.moderation_state = 'approved'
     ) AS photo_count,
 
     artists.name AS artist_name,
@@ -846,6 +1307,7 @@ export default {
   LEFT JOIN photos
     ON photos.artwork_id = artworks.id
     AND photos.is_primary = 1
+    AND photos.moderation_state = 'approved'
   WHERE artworks.latitude BETWEEN ? AND ?
     AND artworks.longitude BETWEEN ? AND ?
   `)
@@ -933,6 +1395,7 @@ export default {
         LEFT JOIN photos
           ON photos.artwork_id = representative_artwork.id
           AND photos.is_primary = 1
+          AND photos.moderation_state = 'approved'
         WHERE representative_artwork.artist_id = artists.id
           AND photos.storage_key IS NOT NULL
         ORDER BY representative_artwork.created_at DESC
@@ -964,6 +1427,7 @@ export default {
         LEFT JOIN photos
           ON photos.artwork_id = representative_artwork.id
           AND photos.is_primary = 1
+          AND photos.moderation_state = 'approved'
         WHERE representative_artwork.artist_id IS NULL
           AND photos.storage_key IS NOT NULL
         ORDER BY representative_artwork.created_at DESC
@@ -1073,6 +1537,7 @@ export default {
       LEFT JOIN photos
         ON photos.artwork_id = artworks.id
         AND photos.is_primary = 1
+        AND photos.moderation_state = 'approved'
       WHERE artworks.artist_id IS NULL
       ORDER BY artworks.created_at DESC
     `).all();
@@ -1131,6 +1596,7 @@ artworks.created_at,
         LEFT JOIN photos
           ON photos.artwork_id = artworks.id
           AND photos.is_primary = 1
+          AND photos.moderation_state = 'approved'
         WHERE artworks.artist_id = ?
         ORDER BY artworks.created_at DESC
       `)
@@ -1180,6 +1646,7 @@ photos.created_at AS photo_added_at
         LEFT JOIN photos
           ON photos.artwork_id = artworks.id
           AND photos.is_primary = 1
+          AND photos.moderation_state = 'approved'
         ORDER BY artworks.created_at DESC
       `).all();
 
@@ -1327,32 +1794,39 @@ photos.created_at AS photo_added_at
         );
       }
 
-      if (
-        supportingPhoto &&
-        !ALLOWED_IMAGE_TYPES.has(supportingPhoto.type)
-      ) {
-        return Response.json(
-          { error: "Supporting photos must be JPEG, PNG, or WebP" },
-          { status: 400 },
-        );
+      let preparedSupportingPhoto: PreparedImage | null = null;
+
+      if (supportingPhoto) {
+        try {
+          await enforceImageUploadRateLimit(env, access.userId, 1);
+          preparedSupportingPhoto = await prepareImageUpload(supportingPhoto);
+        } catch (error) {
+          if (error instanceof ImageUploadError) {
+            return Response.json(
+              { error: error.message },
+              {
+                status: error.status,
+                headers:
+                  error.status === 429
+                    ? { "retry-after": "3600" }
+                    : undefined,
+              },
+            );
+          }
+
+          throw error;
+        }
       }
 
-      if (supportingPhoto && supportingPhoto.size > MAX_IMAGE_SIZE_BYTES) {
-        return Response.json(
-          { error: "Supporting photos must be smaller than 8 MB" },
-          { status: 400 },
-        );
-      }
-
-      const photoStorageKey = supportingPhoto
-        ? `artworks/${artworkId}/status-reports/${crypto.randomUUID()}.${getImageExtension(supportingPhoto.type)}`
+      const photoStorageKey = preparedSupportingPhoto
+        ? `quarantine/artworks/${artworkId}/status-reports/${crypto.randomUUID()}.jpg`
         : null;
 
       try {
-        if (supportingPhoto && photoStorageKey) {
-          await env.IMAGES.put(photoStorageKey, supportingPhoto.stream(), {
+        if (preparedSupportingPhoto && photoStorageKey) {
+          await env.IMAGES.put(photoStorageKey, preparedSupportingPhoto.bytes, {
             httpMetadata: {
-              contentType: supportingPhoto.type,
+              contentType: preparedSupportingPhoto.storedMimeType,
             },
           });
         }
@@ -1477,6 +1951,7 @@ if (artworkDetailMatch && request.method === "GET") {
       created_at
     FROM photos
     WHERE artwork_id = ?
+      AND moderation_state = 'approved'
     ORDER BY is_primary DESC, id ASC
   `)
     .bind(artworkId)
@@ -1860,6 +2335,7 @@ artists.name AS artist_name,
         LEFT JOIN photos
           ON photos.artwork_id = artworks.id
           AND photos.is_primary = 1
+          AND photos.moderation_state = 'approved'
         WHERE checkins.user_id = ?
         ORDER BY checkins.checked_in_at DESC
       `)
@@ -1937,34 +2413,6 @@ artists.name AS artist_name,
         const photos = formData
           .getAll("photos")
           .filter((value): value is File => value instanceof File);
-        const thumbnails = formData
-          .getAll("thumbnails")
-          .filter((value): value is File => value instanceof File);
-        if (
-          thumbnails.length > 0 &&
-          thumbnails.length !== photos.length
-        ) {
-          return Response.json(
-            { error: "Thumbnail count does not match photo count." },
-            { status: 400 },
-          );
-        }
-
-        for (const thumbnail of thumbnails) {
-          if (thumbnail.type !== "image/jpeg") {
-            return Response.json(
-              { error: "Thumbnail must be a JPEG image." },
-              { status: 400 },
-            );
-          }
-
-          if (thumbnail.size > 2 * 1024 * 1024) {
-            return Response.json(
-              { error: "Thumbnail is unexpectedly large." },
-              { status: 400 },
-            );
-          }
-        }
 
         if (photos.length === 0) {
           return Response.json(
@@ -2001,93 +2449,44 @@ artists.name AS artist_name,
           );
         }
 
-        let nextPhotoNumber = existingCount + 1;
-        for (const photo of photos) {
-          if (!ALLOWED_IMAGE_TYPES.has(photo.type)) {
-            return Response.json(
-              { error: "Unsupported image type." },
-              { status: 400 },
-            );
-          }
-
-          if (photo.size > MAX_IMAGE_SIZE_BYTES) {
-            return Response.json(
-              { error: "Each photo must be smaller than 8 MB." },
-              { status: 400 },
-            );
-          }
-        }
-
+        await enforceImageUploadRateLimit(env, userId, photos.length);
+        const preparedPhotos = await Promise.all(
+          photos.map((photo) => prepareImageUpload(photo)),
+        );
+        const moderation = [];
 
         for (let index = 0; index < photos.length; index++) {
-          const photo = photos[index];
-
-          const extension =
-            photo.name.split(".").pop()?.toLowerCase() || "jpg";
-
-          const safeExtension =
-            extension.replace(/[^a-z0-9]/g, "") || "jpg";
-
-          const storageKey =
-            `artworks/${artworkId}/photo-${nextPhotoNumber}.${safeExtension}`;
-
-          const thumbnail = thumbnails[index] ?? null;
-
-          const thumbnailKey = thumbnail
-            ? `artworks/${artworkId}/photo-${nextPhotoNumber}-thumb.jpg`
-            : null;
-
-          await env.IMAGES.put(
-            storageKey,
-            photo.stream(),
-            {
-              httpMetadata: {
-                contentType:
-                  photo.type || "application/octet-stream",
-              },
-            },
-          );
-
-          if (thumbnail && thumbnailKey) {
-            await env.IMAGES.put(
-              thumbnailKey,
-              thumbnail.stream(),
-              {
-                httpMetadata: {
-                  contentType: "image/jpeg",
-                },
-              },
-            );
-          }
-
-          await env.DB.prepare(`
-    INSERT INTO photos (
-      artwork_id,
-      storage_key,
-      thumbnail_key,
-      is_primary,
-      uploaded_by
-    )
-    VALUES (?, ?, ?, 0, ?)
-  `)
-            .bind(
+          moderation.push(
+            await quarantineAndModerateArtworkPhoto(
+              env,
               artworkId,
-              storageKey,
-              thumbnailKey,
               userId,
-            )
-            .run();
-
-          nextPhotoNumber++;
+              photos[index],
+              false,
+              preparedPhotos[index],
+            ),
+          );
         }
 
         return Response.json({
           success: true,
           artwork_id: artworkId,
           added: photos.length,
+          image_moderation: moderation,
         });
       } catch (error) {
         console.error("Photo append failed:", error);
+
+        if (error instanceof ImageUploadError) {
+          return Response.json(
+            { error: error.message },
+            {
+              status: error.status,
+              headers:
+                error.status === 429 ? { "retry-after": "3600" } : undefined,
+            },
+          );
+        }
 
         return Response.json(
           { error: "Could not add photos" },
@@ -2177,6 +2576,25 @@ artists.name AS artist_name,
         url.pathname.replace("/api/images/", "")
       );
 
+      const publicReference = await env.DB.prepare(`
+        SELECT storage_key
+        FROM photos
+        WHERE moderation_state = 'approved'
+          AND (storage_key = ? OR thumbnail_key = ?)
+        UNION ALL
+        SELECT photo_storage_key AS storage_key
+        FROM artwork_status_reports
+        WHERE moderation_state = 'approved'
+          AND photo_storage_key = ?
+        LIMIT 1
+      `)
+        .bind(key, key, key)
+        .first();
+
+      if (!publicReference) {
+        return new Response("Image not found", { status: 404 });
+      }
+
       const object = await env.IMAGES.get(key);
 
       if (!object) {
@@ -2193,6 +2611,7 @@ artists.name AS artist_name,
         "cache-control",
         "public, max-age=31536000, immutable",
       );
+      headers.set("x-content-type-options", "nosniff");
 
       return new Response(object.body, {
         headers,

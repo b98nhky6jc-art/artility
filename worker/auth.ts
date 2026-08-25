@@ -6,6 +6,7 @@ declare global {
     GOOGLE_CLIENT_ID: string;
     GOOGLE_CLIENT_SECRET: string;
     RESEND_API_KEY: string;
+    OPENAI_API_KEY?: string;
     ADMIN_EMAILS?: string;
     ALERT_EMAILS?: string;
   }
@@ -221,7 +222,7 @@ async function deliverArtworkStatusReportAlert(
   if (report.photo_storage_key) {
     lines.push(
       "",
-      `Supporting image: https://artility.co.uk/api/images/${encodeURIComponent(report.photo_storage_key)}`,
+      "Supporting image: included in the private moderation case",
     );
   }
 

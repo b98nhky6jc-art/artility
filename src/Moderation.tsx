@@ -2,24 +2,28 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 import "./App.css";
 
+type ModerationSubject = {
+  type: "artwork";
+  id: number;
+  title: string | null;
+  town: string | null;
+  city: string | null;
+  current_status: string;
+};
+
+type ModerationReporter = {
+  id: string | null;
+  name: string | null;
+  email: string | null;
+};
+
 type ArtworkStatusModerationCase = {
   id: string;
   case_type: "artwork_status_report";
   state: "pending";
   created_at: string;
-  subject: {
-    type: "artwork";
-    id: number;
-    title: string | null;
-    town: string | null;
-    city: string | null;
-    current_status: string;
-  };
-  reporter: {
-    id: string;
-    name: string | null;
-    email: string | null;
-  };
+  subject: ModerationSubject;
+  reporter: ModerationReporter;
   payload: {
     report_id: number;
     report_type: string;
@@ -30,9 +34,34 @@ type ArtworkStatusModerationCase = {
   };
 };
 
-type QueueResponse = {
-  items: ArtworkStatusModerationCase[];
+type ArtworkPhotoModerationCase = {
+  id: string;
+  case_type: "artwork_photo";
+  state: "manual_review";
+  created_at: string;
+  subject: ModerationSubject;
+  reporter: ModerationReporter;
+  payload: {
+    photo_id: number;
+    reason: string | null;
+    provider: string | null;
+    model: string | null;
+    categories: string | null;
+    scores: string | null;
+    moderation_error: string | null;
+    source_mime_type: string | null;
+    stored_mime_type: string | null;
+    width: number | null;
+    height: number | null;
+    byte_size: number | null;
+  };
 };
+
+type ModerationCase =
+  | ArtworkStatusModerationCase
+  | ArtworkPhotoModerationCase;
+
+type QueueResponse = { items: ModerationCase[] };
 
 type QueueState =
   | "loading"
@@ -74,12 +103,39 @@ function formatDate(value: string) {
   });
 }
 
-function getArtworkTitle(item: ArtworkStatusModerationCase) {
+function getArtworkTitle(item: ModerationCase) {
   return item.subject.title?.trim() || `Artwork #${item.subject.id}`;
 }
 
-function getArtworkLocation(item: ArtworkStatusModerationCase) {
+function getArtworkLocation(item: ModerationCase) {
   return item.subject.city || item.subject.town || "Location not recorded";
+}
+
+function formatBytes(value: number | null) {
+  if (!value) {
+    return "Not recorded";
+  }
+
+  return value >= 1024 * 1024
+    ? `${(value / (1024 * 1024)).toFixed(1)} MB`
+    : `${Math.ceil(value / 1024)} KB`;
+}
+
+function getFlaggedCategories(value: string | null) {
+  if (!value) {
+    return "None recorded";
+  }
+
+  try {
+    const categories = JSON.parse(value) as Record<string, boolean>;
+    const flagged = Object.entries(categories)
+      .filter(([, selected]) => selected)
+      .map(([category]) => formatStatusLabel(category));
+
+    return flagged.length ? flagged.join(", ") : "No flagged category";
+  } catch {
+    return "Could not read result";
+  }
 }
 
 function ModerationCaseCard({
@@ -88,30 +144,35 @@ function ModerationCaseCard({
   error,
   onDecision,
 }: {
-  item: ArtworkStatusModerationCase;
+  item: ModerationCase;
   reviewing: Decision | null;
   error: string;
-  onDecision: (item: ArtworkStatusModerationCase, decision: Decision) => void;
+  onDecision: (item: ModerationCase, decision: Decision) => void;
 }) {
   const reporter =
-    item.reporter.name || item.reporter.email || item.reporter.id;
+    item.reporter.name || item.reporter.email || item.reporter.id || "Unknown";
+  const isImageCase = item.case_type === "artwork_photo";
+  const imageUrl = isImageCase
+    ? `/api/admin/moderation/images/artwork-photo/${item.payload.photo_id}`
+    : item.payload.photo_storage_key
+      ? `/api/admin/moderation/images/artwork-status-report/${item.payload.report_id}`
+      : null;
 
   return (
-    <article
-      className="moderation-case"
-      aria-labelledby={`moderation-case-${item.payload.report_id}`}
-    >
+    <article className="moderation-case" aria-labelledby={`case-${item.id}`}>
       <div className="moderation-case-heading">
         <div>
           <div className="moderation-case-badges">
-            <span className="moderation-type-badge">Artwork status</span>
-            <span className="moderation-state-badge">Pending</span>
+            <span className="moderation-type-badge">
+              {isImageCase ? "Artwork image" : "Artwork status"}
+            </span>
+            <span className="moderation-state-badge">
+              {isImageCase ? "Manual review" : "Pending"}
+            </span>
           </div>
-          <h2 id={`moderation-case-${item.payload.report_id}`}>
-            {getArtworkTitle(item)}
-          </h2>
+          <h2 id={`case-${item.id}`}>{getArtworkTitle(item)}</h2>
           <p>
-            {getArtworkLocation(item)} · Current status: {" "}
+            {getArtworkLocation(item)} · Current status:{" "}
             <strong>{formatStatusLabel(item.subject.current_status)}</strong>
           </p>
         </div>
@@ -125,16 +186,20 @@ function ModerationCaseCard({
       </div>
 
       <div className="moderation-case-body">
-        {item.payload.photo_storage_key && (
+        {imageUrl && (
           <a
-            href={`/api/images/${item.payload.photo_storage_key}`}
+            href={imageUrl}
             className="moderation-evidence-link"
             target="_blank"
             rel="noreferrer"
           >
             <img
-              src={`/api/images/${item.payload.photo_storage_key}`}
-              alt={`Supporting evidence for ${formatStatusLabel(item.payload.report_type).toLowerCase()}`}
+              src={imageUrl}
+              alt={
+                isImageCase
+                  ? `Quarantined upload for ${getArtworkTitle(item)}`
+                  : `Supporting evidence for ${formatStatusLabel(item.payload.report_type).toLowerCase()}`
+              }
               loading="lazy"
               decoding="async"
             />
@@ -142,35 +207,78 @@ function ModerationCaseCard({
         )}
 
         <div className="moderation-report-copy">
-          <dl className="moderation-metadata">
-            <div>
-              <dt>Reported status</dt>
-              <dd>{formatStatusLabel(item.payload.report_type)}</dd>
-            </div>
-            <div>
-              <dt>Date observed</dt>
-              <dd>{formatDate(item.payload.date_observed)}</dd>
-            </div>
-            <div>
-              <dt>Reporter</dt>
-              <dd>
-                {reporter}
-                {item.reporter.name && item.reporter.email && (
-                  <small>{item.reporter.email}</small>
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt>Submitted</dt>
-              <dd>{formatDate(item.created_at)}</dd>
-            </div>
-          </dl>
+          {isImageCase ? (
+            <>
+              <dl className="moderation-metadata">
+                <div>
+                  <dt>Automated result</dt>
+                  <dd>{getFlaggedCategories(item.payload.categories)}</dd>
+                </div>
+                <div>
+                  <dt>Normalized image</dt>
+                  <dd>
+                    {item.payload.width && item.payload.height
+                      ? `${item.payload.width} × ${item.payload.height}`
+                      : "Dimensions unavailable"}
+                    <small>{formatBytes(item.payload.byte_size)}</small>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Uploader</dt>
+                  <dd>
+                    {reporter}
+                    {item.reporter.name && item.reporter.email && (
+                      <small>{item.reporter.email}</small>
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Submitted</dt>
+                  <dd>{formatDate(item.created_at)}</dd>
+                </div>
+              </dl>
 
-          {item.payload.note && (
-            <div className="moderation-note">
-              <strong>Reporter note</strong>
-              <p>{item.payload.note}</p>
-            </div>
+              <div className="moderation-note">
+                <strong>Why this needs review</strong>
+                <p>{item.payload.reason || "No reason was supplied."}</p>
+                {item.payload.moderation_error && (
+                  <p>Provider error: {item.payload.moderation_error}</p>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <dl className="moderation-metadata">
+                <div>
+                  <dt>Reported status</dt>
+                  <dd>{formatStatusLabel(item.payload.report_type)}</dd>
+                </div>
+                <div>
+                  <dt>Date observed</dt>
+                  <dd>{formatDate(item.payload.date_observed)}</dd>
+                </div>
+                <div>
+                  <dt>Reporter</dt>
+                  <dd>
+                    {reporter}
+                    {item.reporter.name && item.reporter.email && (
+                      <small>{item.reporter.email}</small>
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Submitted</dt>
+                  <dd>{formatDate(item.created_at)}</dd>
+                </div>
+              </dl>
+
+              {item.payload.note && (
+                <div className="moderation-note">
+                  <strong>Reporter note</strong>
+                  <p>{item.payload.note}</p>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -205,7 +313,7 @@ function ModerationCaseCard({
 
 export default function Moderation() {
   const [queueState, setQueueState] = useState<QueueState>("loading");
-  const [items, setItems] = useState<ArtworkStatusModerationCase[]>([]);
+  const [items, setItems] = useState<ModerationCase[]>([]);
   const [reviewing, setReviewing] = useState<{
     id: string;
     decision: Decision;
@@ -217,10 +325,9 @@ export default function Moderation() {
     setQueueState("loading");
 
     try {
-      const response = await fetch(
-        "/api/admin/moderation/cases?state=pending&type=artwork_status_report",
-        { cache: "no-store" },
-      );
+      const response = await fetch("/api/admin/moderation/cases?type=all", {
+        cache: "no-store",
+      });
 
       if (response.status === 401) {
         setQueueState("signed_out");
@@ -237,7 +344,6 @@ export default function Moderation() {
       }
 
       const data = (await response.json()) as QueueResponse;
-
       setItems(data.items ?? []);
       setQueueState("ready");
     } catch (error) {
@@ -250,17 +356,19 @@ export default function Moderation() {
     void loadQueue();
   }, [loadQueue]);
 
-  async function reviewCase(
-    item: ArtworkStatusModerationCase,
-    decision: Decision,
-  ) {
+  async function reviewCase(item: ModerationCase, decision: Decision) {
     setReviewing({ id: item.id, decision });
     setCaseErrors((current) => ({ ...current, [item.id]: "" }));
     setNotice("");
 
+    const decisionPath =
+      item.case_type === "artwork_photo"
+        ? `artwork-photo/${item.payload.photo_id}`
+        : `artwork-status-report/${item.payload.report_id}`;
+
     try {
       const response = await fetch(
-        `/api/admin/moderation/cases/artwork-status-report/${item.payload.report_id}/decision`,
+        `/api/admin/moderation/cases/${decisionPath}/decision`,
         {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -270,22 +378,31 @@ export default function Moderation() {
       const data = (await response.json()) as { error?: string };
 
       if (!response.ok) {
-        throw new Error(data.error ?? "Could not review this report.");
+        throw new Error(data.error ?? "Could not review this case.");
       }
 
       setItems((current) => current.filter((entry) => entry.id !== item.id));
-      setNotice(
-        decision === "approved"
-          ? `${getArtworkTitle(item)} was approved and its public status is now ${formatStatusLabel(item.payload.report_type).toLowerCase()}.`
-          : `${getArtworkTitle(item)} was rejected. Its public status was not changed.`,
-      );
+
+      if (item.case_type === "artwork_photo") {
+        setNotice(
+          decision === "approved"
+            ? `${getArtworkTitle(item)}’s image is approved and now public.`
+            : `${getArtworkTitle(item)}’s image was rejected and remains private.`,
+        );
+      } else {
+        setNotice(
+          decision === "approved"
+            ? `${getArtworkTitle(item)} was approved and its public status is now ${formatStatusLabel(item.payload.report_type).toLowerCase()}.`
+            : `${getArtworkTitle(item)} was rejected. Its public status was not changed.`,
+        );
+      }
     } catch (error) {
       setCaseErrors((current) => ({
         ...current,
         [item.id]:
           error instanceof Error
             ? error.message
-            : "Could not review this report.",
+            : "Could not review this case.",
       }));
     } finally {
       setReviewing(null);
@@ -298,7 +415,7 @@ export default function Moderation() {
         <section className="page-panel moderation-access-panel">
           <span className="eyebrow">CONTENT REVIEW</span>
           <h1>Sign in to continue</h1>
-          <p>Moderator access is required to review status reports.</p>
+          <p>Moderator access is required to review content.</p>
           <Link to="/login" className="report-signin-link">
             Sign in
           </Link>
@@ -329,13 +446,13 @@ export default function Moderation() {
           <span className="eyebrow">CONTENT REVIEW</span>
           <h1>Moderation queue</h1>
           <p>
-            Review community reports before they affect an artwork’s public
-            status. Decisions preserve the full dated record.
+            Review community reports and uncertain uploads before they can
+            affect public artwork pages.
           </p>
         </div>
         <div className="moderation-queue-count" aria-live="polite">
           <strong>{items.length}</strong>
-          <span>{items.length === 1 ? "pending case" : "pending cases"}</span>
+          <span>{items.length === 1 ? "open case" : "open cases"}</span>
         </div>
       </section>
 
@@ -362,12 +479,12 @@ export default function Moderation() {
         <section className="moderation-empty">
           <span aria-hidden="true">✓</span>
           <h2>All caught up</h2>
-          <p>There are no pending artwork status reports.</p>
+          <p>There are no reports or images waiting for review.</p>
         </section>
       )}
 
       {queueState === "ready" && items.length > 0 && (
-        <section className="moderation-case-list" aria-label="Pending reports">
+        <section className="moderation-case-list" aria-label="Open cases">
           {items.map((item) => (
             <ModerationCaseCard
               key={item.id}

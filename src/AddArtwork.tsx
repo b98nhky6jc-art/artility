@@ -22,6 +22,28 @@ type NearbyArtwork = {
   distance_metres: number;
   artist_id: number | null;
 };
+type UploadResponse = {
+  id?: number;
+  artwork_id?: number;
+  image_moderation?: Array<{
+    id: number;
+    state: "approved" | "rejected" | "manual_review" | "pending";
+  }>;
+};
+
+function getUploadModerationNotice(data: UploadResponse) {
+  const states = data.image_moderation?.map((item) => item.state) ?? [];
+
+  if (states.some((state) => state === "manual_review" || state === "pending")) {
+    return "review" as const;
+  }
+
+  if (states.some((state) => state === "rejected")) {
+    return "rejected" as const;
+  }
+
+  return null;
+}
 async function normaliseImage(file: File): Promise<File> {
   const MAX_DIMENSION = 2200;
   const JPEG_QUALITY = 0.88;
@@ -485,9 +507,15 @@ export default function AddArtwork() {
         );
       }
 
-      const artwork = await response.json();
+      const artwork = (await response.json()) as UploadResponse;
 
-      navigate(`/artwork/${artwork.id}`);
+      if (!artwork.id) {
+        throw new Error("The artwork response was incomplete.");
+      }
+
+      navigate(`/artwork/${artwork.id}`, {
+        state: { uploadModeration: getUploadModerationNotice(artwork) },
+      });
     } catch (error) {
       console.error(error);
       setError("Could not add artwork.");
@@ -522,7 +550,7 @@ export default function AddArtwork() {
 
               <p>
 
-                Upload up to 5 photos and we’ll pull out whatever useful information we can.
+                Upload up to {MAX_PHOTOS_PER_ARTWORK} photos and we’ll pull out whatever useful information we can.
 
               </p>
 
@@ -552,9 +580,11 @@ export default function AddArtwork() {
 
                 <span className="photo-upload-icon">📷</span>
 
-                <strong>Choose up to 5 artwork photos</strong>
+                <strong>Choose up to {MAX_PHOTOS_PER_ARTWORK} artwork photos</strong>
 
-                <span>Drop up to 5 photos here, or click to browse</span>
+                <span>
+                  Drop up to {MAX_PHOTOS_PER_ARTWORK} photos here, or click to browse
+                </span>
               </label>
 
               {readingPhoto && <p className="message">Reading photo…</p>}
@@ -829,7 +859,15 @@ export default function AddArtwork() {
                                         );
                                       }
 
-                                      navigate(`/artwork/${artwork.id}`);
+                                      const result =
+                                        (await response.json()) as UploadResponse;
+
+                                      navigate(`/artwork/${artwork.id}`, {
+                                        state: {
+                                          uploadModeration:
+                                            getUploadModerationNotice(result),
+                                        },
+                                      });
                                     } catch (error) {
                                       console.error(error);
 
