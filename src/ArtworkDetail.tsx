@@ -39,10 +39,56 @@ type ArtworkDetailResponse = {
   photos: ArtworkPhoto[];
 };
 
+type ArtworkStatusEvent = {
+  id: number;
+  report_type: string;
+  date_observed: string;
+  note: string | null;
+  photo_storage_key: string | null;
+  replacement_artwork_id: number | null;
+  created_at: string;
+};
+
+type ArtworkStatusHistoryResponse = {
+  current_status: {
+    type: string;
+    date_observed: string;
+    source: "artwork" | "approved_report";
+  };
+  history: ArtworkStatusEvent[];
+};
+
+const STATUS_REPORT_OPTIONS = [
+  { value: "no_longer_there", label: "No longer there" },
+  { value: "changed_replaced", label: "Changed / replaced" },
+  { value: "damaged", label: "Damaged" },
+  { value: "defaced", label: "Defaced" },
+] as const;
+
 const CHECKIN_RADIUS_METRES = 100;
+const MAX_STATUS_PHOTO_SIZE_BYTES = 8 * 1024 * 1024;
+const TODAY = new Date().toISOString().slice(0, 10);
+
+function formatStatusLabel(value: string) {
+  const knownStatus = STATUS_REPORT_OPTIONS.find(
+    (option) => option.value === value,
+  );
+
+  if (knownStatus) {
+    return knownStatus.label;
+  }
+
+  return value.replaceAll("_", " ").replace(/^./, (letter) =>
+    letter.toUpperCase(),
+  );
+}
 
 function formatArtworkDate(value: string) {
-  const dateValue = value.includes("T") ? value : value.replace(" ", "T") + "Z";
+  const dateValue = /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? `${value}T00:00:00.000Z`
+    : value.includes("T")
+      ? value
+      : value.replace(" ", "T") + "Z";
 
   return new Date(dateValue).toLocaleDateString("en-GB", {
     day: "numeric",
@@ -83,6 +129,11 @@ export default function ArtworkDetail() {
 
 
   const [artwork, setArtwork] = useState<Artwork | null>(null);
+  const [currentApprovedStatus, setCurrentApprovedStatus] = useState<
+    ArtworkStatusHistoryResponse["current_status"] | null
+  >(null);
+  const [statusHistory, setStatusHistory] = useState<ArtworkStatusEvent[]>([]);
+  const [statusHistoryError, setStatusHistoryError] = useState("");
 
   const [loading, setLoading] = useState(true);
 
@@ -110,6 +161,15 @@ export default function ArtworkDetail() {
   const [editDescription, setEditDescription] = useState("");
   const [editInfrastructureType, setEditInfrastructureType] =
     useState("");
+
+  const [reportingOpen, setReportingOpen] = useState(false);
+  const [reportType, setReportType] = useState("");
+  const [dateObserved, setDateObserved] = useState(TODAY);
+  const [reportNote, setReportNote] = useState("");
+  const [reportPhoto, setReportPhoto] = useState<File | null>(null);
+  const [submittingReport, setSubmittingReport] = useState(false);
+  const [reportError, setReportError] = useState("");
+  const [reportSuccess, setReportSuccess] = useState("");
 
   function startEditing() {
     if (!artwork) {
@@ -195,10 +255,73 @@ export default function ArtworkDetail() {
     }
   }
 
+  async function submitStatusReport(
+    event: React.FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    if (!artwork || !canContribute) {
+      return;
+    }
+
+    const form = event.currentTarget;
+    const formData = new FormData();
+
+    formData.set("report_type", reportType);
+    formData.set("date_observed", dateObserved);
+    formData.set("note", reportNote);
+
+    if (reportPhoto) {
+      formData.set("supporting_photo", reportPhoto);
+    }
+
+    setSubmittingReport(true);
+    setReportError("");
+    setReportSuccess("");
+
+    try {
+      const response = await fetch(
+        `/api/artworks/${artwork.id}/status-reports`,
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
+      const data = (await response.json()) as {
+        error?: string;
+        report?: { moderation_state?: string };
+      };
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Could not submit status report.");
+      }
+
+      setReportSuccess(
+        "Report submitted for review. The public artwork status has not changed.",
+      );
+      setReportType("");
+      setDateObserved(TODAY);
+      setReportNote("");
+      setReportPhoto(null);
+      form.reset();
+    } catch (error) {
+      setReportError(
+        error instanceof Error
+          ? error.message
+          : "Could not submit status report.",
+      );
+    } finally {
+      setSubmittingReport(false);
+    }
+  }
+
   useEffect(() => {
     async function loadArtwork() {
       try {
-        const response = await fetch(`/api/artworks/${id}`);
+        const [response, statusResponse] = await Promise.all([
+          fetch(`/api/artworks/${id}`),
+          fetch(`/api/artworks/${id}/status-reports`),
+        ]);
 
         if (!response.ok) {
           setArtwork(null);
@@ -210,6 +333,19 @@ export default function ArtworkDetail() {
         setArtwork(data.artwork);
         setPhotos(data.photos ?? []);
         setCurrentPhotoIndex(0);
+
+        if (statusResponse.ok) {
+          const statusData =
+            (await statusResponse.json()) as ArtworkStatusHistoryResponse;
+
+          setCurrentApprovedStatus(statusData.current_status);
+          setStatusHistory(statusData.history ?? []);
+          setStatusHistoryError("");
+        } else {
+          setCurrentApprovedStatus(null);
+          setStatusHistory([]);
+          setStatusHistoryError("Status history is temporarily unavailable.");
+        }
 
         const checkinResponse = await fetch(
           `/api/artworks/${data.artwork.id}/checkin`,
@@ -284,6 +420,7 @@ export default function ArtworkDetail() {
     !checkedIn &&
     !checkingIn &&
     (withinCheckinRadius || isLocalhost);
+  const approvedStatusType = currentApprovedStatus?.type ?? artwork?.status ?? "present";
 
   async function handleCheckin() {
     if (!artwork || !canCheckIn) {
@@ -404,9 +541,15 @@ export default function ArtworkDetail() {
           </div>
 
           <div className="detail-info">
-            <span className={`status status-${artwork.status}`}>
-              ● {artwork.status}
-            </span>
+            <div className="current-artwork-status">
+              <span>Current approved status</span>
+              <strong>{formatStatusLabel(approvedStatusType)}</strong>
+              {currentApprovedStatus?.source === "approved_report" && (
+                <small>
+                  Observed {formatArtworkDate(currentApprovedStatus.date_observed)}
+                </small>
+              )}
+            </div>
 
             <h1>{artwork.title?.trim() || "Utility cabinet"}</h1>
 
@@ -635,6 +778,191 @@ export default function ArtworkDetail() {
               >
                 Reset check-in (dev)
               </button>
+            )}
+          </div>
+        </section>
+
+        <section className="status-report-section">
+          <div className="status-history-panel">
+            <span className="eyebrow">STATUS HISTORY</span>
+            <h2>What’s happened here</h2>
+            <p className="status-section-intro">
+              Only reviewed and approved reports appear in this public history.
+            </p>
+
+            {statusHistoryError ? (
+              <p className="status-history-empty">{statusHistoryError}</p>
+            ) : statusHistory.length > 0 ? (
+              <ol className="status-timeline">
+                {statusHistory.map((event) => (
+                  <li key={event.id}>
+                    <div className="status-timeline-marker" aria-hidden="true" />
+                    <div className="status-timeline-content">
+                      <time dateTime={event.date_observed}>
+                        {formatArtworkDate(event.date_observed)}
+                      </time>
+                      <h3>{formatStatusLabel(event.report_type)}</h3>
+
+                      {event.note && <p>{event.note}</p>}
+
+                      {event.photo_storage_key && (
+                        <img
+                          src={`/api/images/${event.photo_storage_key}`}
+                          alt={`Supporting evidence for ${formatStatusLabel(event.report_type).toLowerCase()}`}
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      )}
+
+                      {event.replacement_artwork_id && (
+                        <Link to={`/artwork/${event.replacement_artwork_id}`}>
+                          View replacement artwork →
+                        </Link>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="status-history-empty">
+                No approved status changes have been reported yet.
+              </p>
+            )}
+          </div>
+
+          <div className="report-status-panel">
+            <span className="eyebrow">KEEP IT CURRENT</span>
+            <h2>Seen a change?</h2>
+            <p className="status-section-intro">
+              Submit what you observed. Reports stay pending until they’ve been
+              reviewed and never change the public status immediately.
+            </p>
+
+            {!session?.user ? (
+              <Link to="/login" className="report-signin-link">
+                Sign in to report a change
+              </Link>
+            ) : !canContribute ? (
+              <p className="status-report-requirement">
+                Verify your email before submitting a status report.
+              </p>
+            ) : !reportingOpen ? (
+              <button
+                type="button"
+                className="report-status-button"
+                onClick={() => {
+                  setReportingOpen(true);
+                  setReportError("");
+                  setReportSuccess("");
+                }}
+              >
+                Report artwork status
+              </button>
+            ) : (
+              <form className="status-report-form" onSubmit={submitStatusReport}>
+                <label>
+                  What did you observe?
+                  <select
+                    required
+                    value={reportType}
+                    onChange={(event) => setReportType(event.target.value)}
+                  >
+                    <option value="">Choose a status</option>
+                    {STATUS_REPORT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  Date observed
+                  <input
+                    type="date"
+                    required
+                    max={TODAY}
+                    value={dateObserved}
+                    onChange={(event) => setDateObserved(event.target.value)}
+                  />
+                </label>
+
+                <label>
+                  Note <span>Optional</span>
+                  <textarea
+                    rows={4}
+                    maxLength={1000}
+                    value={reportNote}
+                    onChange={(event) => setReportNote(event.target.value)}
+                    placeholder="Add useful context for the reviewer"
+                  />
+                </label>
+
+                <label>
+                  Supporting photo <span>Optional · JPEG, PNG or WebP</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] ?? null;
+
+                      if (file && file.size > MAX_STATUS_PHOTO_SIZE_BYTES) {
+                        setReportPhoto(null);
+                        setReportError("Supporting photos must be smaller than 8 MB.");
+                        event.target.value = "";
+                        return;
+                      }
+
+                      setReportPhoto(file);
+                      setReportError("");
+                    }}
+                  />
+                </label>
+
+                {reportPhoto && (
+                  <p className="selected-report-photo">
+                    Selected: {reportPhoto.name}
+                  </p>
+                )}
+
+                {reportError && (
+                  <p className="form-error" role="alert">
+                    {reportError}
+                  </p>
+                )}
+
+                {reportSuccess && (
+                  <p className="status-report-success" role="status">
+                    {reportSuccess}
+                  </p>
+                )}
+
+                <div className="status-report-actions">
+                  <button
+                    type="submit"
+                    className="report-status-button"
+                    disabled={submittingReport}
+                  >
+                    {submittingReport ? "Submitting…" : "Submit for review"}
+                  </button>
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => {
+                      setReportingOpen(false);
+                      setReportError("");
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {reportSuccess && !reportingOpen && (
+              <p className="status-report-success" role="status">
+                {reportSuccess}
+              </p>
             )}
           </div>
         </section>

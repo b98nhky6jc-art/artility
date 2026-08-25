@@ -3,6 +3,13 @@ import { createAuth } from "./auth.js";
 const MAX_PHOTOS_PER_ARTWORK = 3;
 
 const MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024;
+const MAX_STATUS_REPORT_NOTE_LENGTH = 1000;
+const STATUS_REPORT_TYPES = new Set([
+  "no_longer_there",
+  "changed_replaced",
+  "damaged",
+  "defaced",
+]);
 const EMAIL_VERIFICATION_CUTOFF = Date.parse(
   "2026-08-24T22:10:00.000Z",
 );
@@ -11,6 +18,32 @@ const ALLOWED_IMAGE_TYPES = new Set([
   "image/png",
   "image/webp",
 ]);
+
+function isValidObservedDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+
+  return (
+    !Number.isNaN(parsed.getTime()) &&
+    parsed.toISOString().slice(0, 10) === value &&
+    value <= new Date().toISOString().slice(0, 10)
+  );
+}
+
+function getImageExtension(contentType: string) {
+  if (contentType === "image/png") {
+    return "png";
+  }
+
+  if (contentType === "image/webp") {
+    return "webp";
+  }
+
+  return "jpg";
+}
 
 function createVerificationLandingResponse(
   authResponse: Response,
@@ -859,6 +892,232 @@ photos.created_at AS photo_added_at
       `).all();
 
       return Response.json(result.results);
+    }
+
+    const artworkStatusReportsMatch = url.pathname.match(
+      /^\/api\/artworks\/(\d+)\/status-reports$/,
+    );
+
+    if (artworkStatusReportsMatch && request.method === "GET") {
+      const artworkId = Number(artworkStatusReportsMatch[1]);
+      const artwork = await env.DB.prepare(`
+        SELECT id, status, created_at
+        FROM artworks
+        WHERE id = ?
+        LIMIT 1
+      `)
+        .bind(artworkId)
+        .first<{
+          id: number;
+          status: string;
+          created_at: string;
+        }>();
+
+      if (!artwork) {
+        return Response.json(
+          { error: "Artwork not found" },
+          { status: 404 },
+        );
+      }
+
+      const approvedHistory = await env.DB.prepare(`
+        SELECT
+          id,
+          report_type,
+          date_observed,
+          note,
+          photo_storage_key,
+          replacement_artwork_id,
+          created_at
+        FROM artwork_status_reports
+        WHERE artwork_id = ?
+          AND moderation_state = 'approved'
+        ORDER BY date_observed DESC, created_at DESC, id DESC
+      `)
+        .bind(artworkId)
+        .all<{
+          id: number;
+          report_type: string;
+          date_observed: string;
+          note: string | null;
+          photo_storage_key: string | null;
+          replacement_artwork_id: number | null;
+          created_at: string;
+        }>();
+
+      const history = approvedHistory.results;
+      const latestApprovedReport = history[0] ?? null;
+
+      return Response.json({
+        current_status: latestApprovedReport
+          ? {
+              type: latestApprovedReport.report_type,
+              date_observed: latestApprovedReport.date_observed,
+              source: "approved_report",
+            }
+          : {
+              type: artwork.status,
+              date_observed: artwork.created_at.slice(0, 10),
+              source: "artwork",
+            },
+        history,
+      });
+    }
+
+    if (artworkStatusReportsMatch && request.method === "POST") {
+      const access = await requireVerifiedUser();
+
+      if (!access.ok) {
+        return access.response;
+      }
+
+      const artworkId = Number(artworkStatusReportsMatch[1]);
+      const artwork = await env.DB.prepare(`
+        SELECT id
+        FROM artworks
+        WHERE id = ?
+        LIMIT 1
+      `)
+        .bind(artworkId)
+        .first();
+
+      if (!artwork) {
+        return Response.json(
+          { error: "Artwork not found" },
+          { status: 404 },
+        );
+      }
+
+      let formData: FormData;
+
+      try {
+        formData = await request.formData();
+      } catch {
+        return Response.json(
+          { error: "Status reports must use form data" },
+          { status: 400 },
+        );
+      }
+
+      const reportType = String(
+        formData.get("report_type") ?? "",
+      ).trim();
+      const dateObserved = String(
+        formData.get("date_observed") ?? "",
+      ).trim();
+      const note = String(formData.get("note") ?? "").trim() || null;
+      const supportingPhotoValue = formData.get("supporting_photo");
+      const supportingPhoto =
+        supportingPhotoValue instanceof File && supportingPhotoValue.size > 0
+          ? supportingPhotoValue
+          : null;
+
+      if (!STATUS_REPORT_TYPES.has(reportType)) {
+        return Response.json(
+          { error: "Choose a valid artwork status" },
+          { status: 400 },
+        );
+      }
+
+      if (!isValidObservedDate(dateObserved)) {
+        return Response.json(
+          { error: "Choose a valid observed date that is not in the future" },
+          { status: 400 },
+        );
+      }
+
+      if (note && note.length > MAX_STATUS_REPORT_NOTE_LENGTH) {
+        return Response.json(
+          {
+            error: `Notes must be ${MAX_STATUS_REPORT_NOTE_LENGTH} characters or fewer`,
+          },
+          { status: 400 },
+        );
+      }
+
+      if (
+        supportingPhoto &&
+        !ALLOWED_IMAGE_TYPES.has(supportingPhoto.type)
+      ) {
+        return Response.json(
+          { error: "Supporting photos must be JPEG, PNG, or WebP" },
+          { status: 400 },
+        );
+      }
+
+      if (supportingPhoto && supportingPhoto.size > MAX_IMAGE_SIZE_BYTES) {
+        return Response.json(
+          { error: "Supporting photos must be smaller than 8 MB" },
+          { status: 400 },
+        );
+      }
+
+      const photoStorageKey = supportingPhoto
+        ? `artworks/${artworkId}/status-reports/${crypto.randomUUID()}.${getImageExtension(supportingPhoto.type)}`
+        : null;
+
+      try {
+        if (supportingPhoto && photoStorageKey) {
+          await env.IMAGES.put(photoStorageKey, supportingPhoto.stream(), {
+            httpMetadata: {
+              contentType: supportingPhoto.type,
+            },
+          });
+        }
+
+        const inserted = await env.DB.prepare(`
+          INSERT INTO artwork_status_reports (
+            artwork_id,
+            report_type,
+            date_observed,
+            note,
+            photo_storage_key,
+            reporting_user_id,
+            replacement_artwork_id,
+            moderation_state
+          )
+          VALUES (?, ?, ?, ?, ?, ?, NULL, 'pending')
+        `)
+          .bind(
+            artworkId,
+            reportType,
+            dateObserved,
+            note,
+            photoStorageKey,
+            access.userId,
+          )
+          .run();
+
+        return Response.json(
+          {
+            success: true,
+            report: {
+              id: Number(inserted.meta.last_row_id),
+              artwork_id: artworkId,
+              report_type: reportType,
+              date_observed: dateObserved,
+              note,
+              photo_storage_key: photoStorageKey,
+              reporting_user_id: access.userId,
+              replacement_artwork_id: null,
+              moderation_state: "pending",
+              created_at: new Date().toISOString(),
+            },
+          },
+          { status: 201 },
+        );
+      } catch (error) {
+        if (photoStorageKey) {
+          await env.IMAGES.delete(photoStorageKey).catch(() => undefined);
+        }
+
+        console.error("Artwork status report failed:", error);
+
+        return Response.json(
+          { error: "Could not submit status report" },
+          { status: 500 },
+        );
+      }
     }
 
     const artworkDetailMatch = url.pathname.match(
