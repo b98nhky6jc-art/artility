@@ -682,6 +682,45 @@ main {
   cursor: pointer;
 }
 
+.add-to-walk-control {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+}
+
+.artwork-card > .add-to-walk-control {
+  padding: 0 20px 20px;
+}
+
+.add-to-walk-button {
+  min-height: 42px;
+  padding: 9px 16px;
+  border: 1px solid var(--coral);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.add-to-walk-button:hover,
+.add-to-walk-button.is-selected {
+  background: var(--soft-coral);
+}
+
+.add-to-walk-button:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.add-to-walk-message {
+  max-width: 240px;
+  color: var(--danger);
+  text-align: center;
+}
+
 .load-more-row {
   margin-top: 32px;
 
@@ -1057,6 +1096,10 @@ main {
   flex-wrap: wrap;
   justify-content: center;
   gap: 10px;
+}
+
+.detail-info > .add-to-walk-control {
+  margin: 16px 0 6px;
 }
 
 .detail-management-actions .edit-details-button {
@@ -2775,6 +2818,299 @@ main {
 
 
 /* =========================================================
+   ART WALK
+   ========================================================= */
+
+.art-walk-tray {
+  position: fixed;
+  z-index: 40;
+  right: max(22px, var(--content-gutter));
+  bottom: 24px;
+  min-width: 330px;
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  border-radius: var(--radius-medium);
+  background: var(--ink);
+  color: var(--cream);
+  box-shadow: 0 16px 44px rgba(61, 31, 22, 0.28);
+}
+
+.art-walk-tray .eyebrow {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--teal);
+}
+
+.art-walk-tray strong {
+  display: block;
+}
+
+.art-walk-tray-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.art-walk-tray-actions a,
+.art-walk-tray-actions button {
+  min-height: 40px;
+  padding: 9px 14px;
+  border-radius: var(--radius-pill);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.art-walk-tray-actions a {
+  background: var(--coral);
+  color: var(--ink-strong);
+  text-decoration: none;
+}
+
+.art-walk-tray-actions button {
+  border: 1px solid rgba(255, 248, 233, 0.45);
+  background: transparent;
+  color: var(--cream);
+}
+
+.art-walk-page {
+  display: grid;
+  gap: var(--section-gap);
+}
+
+.art-walk-hero {
+  min-height: 310px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 36px;
+}
+
+.art-walk-hero h1 {
+  margin: 10px 0 12px;
+  font-size: clamp(62px, 8vw, 116px);
+  line-height: 0.9;
+  letter-spacing: -6px;
+}
+
+.art-walk-hero p {
+  max-width: 660px;
+  color: var(--muted);
+  font-size: 19px;
+  line-height: 1.6;
+}
+
+.art-walk-count {
+  min-width: 150px;
+  aspect-ratio: 1;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  border-radius: var(--radius-large);
+  background: var(--mustard);
+  color: var(--ink-strong);
+}
+
+.art-walk-count strong {
+  font-size: 44px;
+  line-height: 1;
+}
+
+.art-walk-count span {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.art-walk-empty {
+  min-height: 360px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.art-walk-empty h2 {
+  margin: 0;
+  font-size: clamp(38px, 5vw, 64px);
+}
+
+.art-walk-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.72fr) minmax(0, 1.28fr);
+  align-items: start;
+  gap: clamp(22px, 2.6vw, 40px);
+}
+
+.art-walk-stops-panel,
+.art-walk-map-panel {
+  padding: clamp(26px, 3vw, 42px);
+}
+
+.art-walk-section-heading,
+.art-walk-map-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.art-walk-section-heading h2,
+.art-walk-map-heading h2 {
+  margin: 7px 0 0;
+  font-size: clamp(34px, 4vw, 54px);
+  line-height: 1;
+  letter-spacing: -2px;
+}
+
+.art-walk-stop-list {
+  margin: 28px 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  list-style: none;
+}
+
+.art-walk-stop-list li {
+  min-width: 0;
+  padding: 14px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border-radius: var(--radius-medium);
+  background: var(--surface-muted);
+}
+
+.art-walk-stop-number,
+.art-walk-map-marker {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--mustard);
+  color: var(--ink-strong);
+  font-weight: 900;
+}
+
+.art-walk-map-marker {
+  border: 3px solid var(--paper);
+  box-shadow: 0 4px 12px rgba(61, 31, 22, 0.3);
+}
+
+.art-walk-stop-list a {
+  display: block;
+  overflow: hidden;
+  color: var(--ink);
+  font-weight: 800;
+  text-overflow: ellipsis;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.art-walk-stop-list small {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.art-walk-stop-list button {
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.art-walk-start-options {
+  margin: 0 0 22px;
+  padding: 18px;
+  display: grid;
+  gap: 10px;
+  border: 0;
+  border-radius: var(--radius-medium);
+  background: var(--soft-green);
+}
+
+.art-walk-start-options legend {
+  margin-bottom: 7px;
+  color: var(--teal-strong);
+  font-weight: 800;
+}
+
+.art-walk-start-options label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 700;
+}
+
+.art-walk-start-options small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.art-walk-plan-button {
+  width: 100%;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.art-walk-plan-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.art-walk-summary {
+  max-width: 290px;
+  padding: 10px 14px;
+  border-radius: var(--radius-pill);
+  background: var(--soft-green);
+  color: var(--teal-strong);
+  font-size: 14px;
+  line-height: 1.4;
+  text-align: right;
+}
+
+.art-walk-map {
+  height: 620px;
+  margin-top: 24px;
+  overflow: hidden;
+  border-radius: var(--radius-large);
+}
+
+.art-walk-map .real-map {
+  height: 100%;
+  min-height: 100%;
+}
+
+.artist-artwork-card-wrap {
+  overflow: hidden;
+  border-radius: var(--radius-medium);
+  background: var(--paper);
+}
+
+.artist-artwork-card-wrap .artist-artwork-card {
+  border-radius: 0;
+}
+
+.artist-artwork-card-wrap .add-to-walk-control {
+  padding: 0 18px 18px;
+}
+
+
+/* =========================================================
    MOBILE NAV
    ========================================================= */
 
@@ -2885,6 +3221,79 @@ main {
   .artwork-grid {
     grid-template-columns: 1fr;
     gap: 18px;
+  }
+
+  .art-walk-tray {
+    right: 12px;
+    bottom: 78px;
+    left: 12px;
+    min-width: 0;
+    padding: 13px 14px;
+    gap: 12px;
+  }
+
+  .art-walk-tray-actions a,
+  .art-walk-tray-actions button {
+    padding: 8px 11px;
+  }
+
+  .art-walk-hero {
+    min-height: 0;
+    grid-template-columns: 1fr auto;
+    gap: 18px;
+  }
+
+  .art-walk-hero h1 {
+    font-size: 54px;
+    letter-spacing: -3px;
+  }
+
+  .art-walk-hero p {
+    font-size: 16px;
+  }
+
+  .art-walk-count {
+    min-width: 82px;
+    border-radius: var(--radius-medium);
+  }
+
+  .art-walk-count strong {
+    font-size: 30px;
+  }
+
+  .art-walk-layout {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
+  .art-walk-stops-panel,
+  .art-walk-map-panel {
+    padding: 26px 22px;
+  }
+
+  .art-walk-section-heading,
+  .art-walk-map-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .art-walk-summary {
+    max-width: none;
+    text-align: left;
+  }
+
+  .art-walk-map {
+    height: 430px;
+    border-radius: var(--radius-medium);
+  }
+
+  .art-walk-stop-list li {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .art-walk-stop-list li > button {
+    grid-column: 2;
+    justify-self: start;
   }
 
   .artwork-image-placeholder {

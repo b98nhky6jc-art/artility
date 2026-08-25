@@ -21,6 +21,15 @@ import {
   normaliseArtistNameKey,
   normaliseInstagramHandle,
 } from "../shared/artist-identity.js";
+import {
+  requestOpenRouteServiceWalkingRoute,
+  RoutingError,
+  validateRoutePlanInput,
+} from "./routing.js";
+
+type ArtilityEnv = Env & {
+  OPENROUTESERVICE_API_KEY?: string;
+};
 
 const MAX_PHOTOS_PER_ARTWORK = 3;
 const MAX_AUTOMATED_MODERATION_ATTEMPTS = 3;
@@ -943,7 +952,7 @@ function createVerificationLandingResponse(
 export default {
   async fetch(
     request: Request,
-    env: Env,
+    env: ArtilityEnv,
     ctx: ExecutionContext,
   ): Promise<Response> {
     const url = new URL(request.url);
@@ -1081,6 +1090,118 @@ export default {
 
     if (url.pathname.startsWith("/api/auth/")) {
       return auth.handler(request);
+    }
+
+    if (url.pathname === "/api/routes/plan" && request.method === "POST") {
+      const contentLength = Number(request.headers.get("content-length") ?? 0);
+
+      if (contentLength > 8_192) {
+        return Response.json(
+          { error: "Route request is too large", code: "INVALID_ROUTE_REQUEST" },
+          { status: 413 },
+        );
+      }
+
+      try {
+        const input = validateRoutePlanInput(await request.json());
+        const placeholders = input.artwork_ids.map(() => "?").join(", ");
+        const result = await env.DB.prepare(`
+          SELECT
+            artworks.id,
+            artworks.title,
+            artworks.latitude,
+            artworks.longitude,
+            artworks.town,
+            artworks.city,
+            artists.name AS artist_name
+          FROM artworks
+          LEFT JOIN artists ON artists.id = artworks.artist_id
+          WHERE artworks.id IN (${placeholders})
+            AND EXISTS (
+              SELECT 1
+              FROM photos AS publishable_photo
+              WHERE publishable_photo.artwork_id = artworks.id
+                AND publishable_photo.moderation_state = 'approved'
+            )
+        `)
+          .bind(...input.artwork_ids)
+          .all<{
+            id: number;
+            title: string | null;
+            latitude: number;
+            longitude: number;
+            town: string | null;
+            city: string | null;
+            artist_name: string | null;
+          }>();
+        const artworkById = new Map(
+          result.results.map((artwork) => [artwork.id, artwork]),
+        );
+        const orderedStops = input.artwork_ids
+          .map((id) => artworkById.get(id))
+          .filter((artwork): artwork is NonNullable<typeof artwork> => Boolean(artwork));
+
+        if (orderedStops.length !== input.artwork_ids.length) {
+          return Response.json(
+            {
+              error: "One or more selected artworks are unavailable",
+              code: "ROUTE_STOP_NOT_FOUND",
+            },
+            { status: 404 },
+          );
+        }
+
+        const stopCoordinates = orderedStops.map((artwork) => [
+          Number(artwork.longitude),
+          Number(artwork.latitude),
+        ]);
+        const firstStop = stopCoordinates[0];
+        const startsAtFirstStop =
+          Math.abs(firstStop[0] - input.start.longitude) < 0.000001 &&
+          Math.abs(firstStop[1] - input.start.latitude) < 0.000001;
+        const coordinates = startsAtFirstStop
+          ? stopCoordinates
+          : [[input.start.longitude, input.start.latitude], ...stopCoordinates];
+        const route = await requestOpenRouteServiceWalkingRoute(
+          env.OPENROUTESERVICE_API_KEY ?? "",
+          coordinates,
+        );
+
+        return Response.json(
+          {
+            mode: "walking",
+            stops: orderedStops,
+            total_distance_metres: route.distanceMetres,
+            estimated_duration_seconds: route.durationSeconds,
+            geometry: route.geometry,
+          },
+          { headers: { "cache-control": "no-store" } },
+        );
+      } catch (error) {
+        if (error instanceof RoutingError) {
+          const headers = error.retryAfter
+            ? { "retry-after": error.retryAfter }
+            : undefined;
+
+          return Response.json(
+            { error: error.message, code: error.code },
+            { status: error.status, headers },
+          );
+        }
+
+        if (error instanceof SyntaxError) {
+          return Response.json(
+            { error: "Route request must be valid JSON", code: "INVALID_ROUTE_REQUEST" },
+            { status: 400 },
+          );
+        }
+
+        console.error("Walking route planning failed", error);
+        return Response.json(
+          { error: "Could not generate this walk", code: "ROUTE_PLAN_FAILED" },
+          { status: 500 },
+        );
+      }
     }
 
     if (
@@ -3271,7 +3392,7 @@ artists.name AS artist_name,
 
   scheduled(
     _controller: ScheduledController,
-    env: Env,
+    env: ArtilityEnv,
     ctx: ExecutionContext,
   ) {
     ctx.waitUntil(
@@ -3300,4 +3421,4 @@ artists.name AS artist_name,
       ]).then(() => undefined),
     );
   },
-} satisfies ExportedHandler<Env>;
+} satisfies ExportedHandler<ArtilityEnv>;

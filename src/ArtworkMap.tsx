@@ -13,9 +13,23 @@ type Artwork = {
 
 type Props = {
   artworks: Artwork[];
+  numberedStops?: boolean;
+  routeGeometry?: RouteLineString | null;
 };
 
-export default function ArtworkMap({ artworks }: Props) {
+export type RouteLineString = {
+  type: "LineString";
+  coordinates: number[][];
+};
+
+const ROUTE_SOURCE_ID = "art-walk-route";
+const ROUTE_LAYER_ID = "art-walk-route-line";
+
+export default function ArtworkMap({
+  artworks,
+  numberedStops = false,
+  routeGeometry = null,
+}: Props) {
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<maplibregl.Marker[]>([]);
@@ -95,9 +109,15 @@ export default function ArtworkMap({ artworks }: Props) {
         className: "artwork-popup",
       }).setDOMContent(popupContent);
 
-      const marker = new maplibregl.Marker({
-        color: "var(--yellow)",
-      })
+      const markerOptions: maplibregl.MarkerOptions = numberedStops
+        ? {
+            element: Object.assign(document.createElement("div"), {
+              className: "art-walk-map-marker",
+              textContent: String(artworks.indexOf(artwork) + 1),
+            }),
+          }
+        : { color: "var(--yellow)" };
+      const marker = new maplibregl.Marker(markerOptions)
         .setLngLat([longitude, latitude])
         .setPopup(popup)
         .addTo(map);
@@ -121,7 +141,91 @@ export default function ArtworkMap({ artworks }: Props) {
         });
       }
     }
-  }, [artworks]);
+  }, [artworks, numberedStops]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+
+    if (!map) {
+      return;
+    }
+
+    function syncRoute() {
+      const routeData: {
+        type: "FeatureCollection";
+        features: Array<{
+          type: "Feature";
+          properties: Record<string, never>;
+          geometry: RouteLineString;
+        }>;
+      } = {
+        type: "FeatureCollection",
+        features: routeGeometry
+          ? [
+              {
+                type: "Feature",
+                properties: {},
+                geometry: routeGeometry,
+              },
+            ]
+          : [],
+      };
+      const existingSource = map?.getSource(
+        ROUTE_SOURCE_ID,
+      ) as maplibregl.GeoJSONSource | undefined;
+
+      if (existingSource) {
+        existingSource.setData(routeData);
+      } else {
+        map?.addSource(ROUTE_SOURCE_ID, {
+          type: "geojson",
+          data: routeData,
+        });
+        map?.addLayer({
+          id: ROUTE_LAYER_ID,
+          type: "line",
+          source: ROUTE_SOURCE_ID,
+          layout: {
+            "line-cap": "round",
+            "line-join": "round",
+          },
+          paint: {
+            "line-color": "#DD5341",
+            "line-width": 6,
+            "line-opacity": 0.9,
+          },
+        });
+      }
+
+      if (routeGeometry?.coordinates.length) {
+        const bounds = new maplibregl.LngLatBounds();
+
+        routeGeometry.coordinates.forEach((coordinate) => {
+          if (coordinate.length >= 2) {
+            bounds.extend([coordinate[0], coordinate[1]]);
+          }
+        });
+
+        if (!bounds.isEmpty()) {
+          map?.fitBounds(bounds, {
+            padding: 55,
+            maxZoom: 16,
+            duration: 800,
+          });
+        }
+      }
+    }
+
+    if (map.isStyleLoaded()) {
+      syncRoute();
+      return;
+    }
+
+    map.once("load", syncRoute);
+    return () => {
+      map.off("load", syncRoute);
+    };
+  }, [routeGeometry]);
 
   return <div ref={mapContainer} className="real-map" />;
 }

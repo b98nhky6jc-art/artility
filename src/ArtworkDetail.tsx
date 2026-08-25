@@ -9,6 +9,7 @@ import EmailVerificationNotice from "./EmailVerificationNotice";
 import { canUserContribute } from "./emailVerification";
 import ArtistAutocomplete from "./ArtistAutocomplete";
 import { useAdminAccess } from "./useModeratorAccess";
+import AddToWalkButton from "./AddToWalkButton";
 import {
   formatInfrastructureType,
   INFRASTRUCTURE_TYPES,
@@ -625,6 +626,8 @@ export default function ArtworkDetail() {
             {session?.user && !canContribute && (
               <EmailVerificationNotice email={session.user.email} compact />
             )}
+
+            <AddToWalkButton artworkId={artwork.id} />
 
             {!editing && (canContribute || isAdmin) && (
               <div className="detail-management-actions">

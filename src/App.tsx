@@ -16,6 +16,7 @@ import {
   type UserLocation,
 } from "./artworkDiscovery";
 import { formatInfrastructureType } from "../shared/infrastructure-types";
+import AddToWalkButton from "./AddToWalkButton";
 
 
 type Artwork = {
@@ -231,6 +232,7 @@ function App() {
                     <span className="card-button">View artwork →</span>
                   </div>
                 </Link>
+                <AddToWalkButton artworkId={artwork.id} />
               </article>
             ))}
           </div>

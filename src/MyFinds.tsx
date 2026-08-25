@@ -8,6 +8,7 @@ import EmailVerificationNotice from "./EmailVerificationNotice";
 import { canUserContribute } from "./emailVerification";
 import { formatInfrastructureType } from "../shared/infrastructure-types";
 import { useAdminAccess } from "./useModeratorAccess";
+import AddToWalkButton from "./AddToWalkButton";
 
 type Find = {
   instagram_handle: string | null;
@@ -216,6 +217,7 @@ export default function MyFinds() {
                     </p>
                   </div>
                 </Link>
+                <AddToWalkButton artworkId={artwork.id} />
               </article>
             ))}
           </div>

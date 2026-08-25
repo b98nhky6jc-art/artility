@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router";
 import "./App.css";
 import { getArtworkDisplayTitle } from "./artworkDisplay";
 import { formatInfrastructureType } from "../shared/infrastructure-types";
+import AddToWalkButton from "./AddToWalkButton";
 
 type Artist = {
   id: number;
@@ -151,34 +152,34 @@ export default function ArtistDetail() {
 
           <div className="artist-artwork-grid">
             {artworks.map((artwork) => (
-              <Link
-                key={artwork.id}
-                to={`/artwork/${artwork.id}`}
-                className="artist-artwork-card"
-              >
-                {artwork.primary_photo ? (
-                  <img
-                    src={`/api/images/${artwork.primary_photo}`}
-                    alt=""
-                  />
-                ) : (
-                  <div className="artist-card-placeholder">
-                    ARTWORK
+              <article className="artist-artwork-card-wrap" key={artwork.id}>
+                <Link
+                  to={`/artwork/${artwork.id}`}
+                  className="artist-artwork-card"
+                >
+                  {artwork.primary_photo ? (
+                    <img
+                      src={`/api/images/${artwork.primary_photo}`}
+                      alt=""
+                    />
+                  ) : (
+                    <div className="artist-card-placeholder">
+                      ARTWORK
+                    </div>
+                  )}
+
+                  <div className="artist-artwork-copy">
+                    <h2>{getArtworkDisplayTitle(artwork)}</h2>
+
+                    <p>
+                      {artwork.town ||
+                        artwork.city ||
+                        formatInfrastructureType(artwork.infrastructure_type)}
+                    </p>
                   </div>
-                )}
-
-                <div className="artist-artwork-copy">
-                  <h2>
-                    {getArtworkDisplayTitle(artwork)}
-                  </h2>
-
-                  <p>
-                    {artwork.town ||
-                      artwork.city ||
-                      formatInfrastructureType(artwork.infrastructure_type)}
-                  </p>
-                </div>
-              </Link>
+                </Link>
+                <AddToWalkButton artworkId={artwork.id} />
+              </article>
             ))}
           </div>
 
