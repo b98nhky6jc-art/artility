@@ -144,18 +144,19 @@ function App() {
                   className="artwork-card-link"
                 >
                   <div className="artwork-image-placeholder">
-                    <img
-                      src={
-                        artwork.primary_photo
-                          ? `/api/images/${artwork.primary_photo}`
-                          : "/artworks/duck-box-local-backup.jpg"
-
-                      }
-                      alt={getArtworkDisplayTitle(artwork)}
-                      className="artwork-photo"
-                      loading="lazy"
-                      decoding="async"
-                    />
+                    {artwork.primary_photo ? (
+                      <img
+                        src={`/api/images/${artwork.primary_photo}`}
+                        alt={getArtworkDisplayTitle(artwork)}
+                        className="artwork-photo"
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    ) : (
+                      <span className="artwork-photo-unavailable">
+                        Photo unavailable
+                      </span>
+                    )}
 
                     <span className="artwork-number">#{artwork.id}</span>
                   </div>

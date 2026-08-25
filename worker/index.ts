@@ -2,6 +2,7 @@ import {
   continueEmailNotificationDelivery,
   createAuth,
   queueArtworkStatusReportAlert,
+  queueImageModerationReviewAlert,
 } from "./auth.js";
 import {
   ImageUploadError,
@@ -1202,16 +1203,19 @@ export default {
         const moderation = [];
 
         for (let index = 0; index < photos.length; index++) {
-          moderation.push(
-            await quarantineAndModerateArtworkPhoto(
-              env,
-              artworkId,
-              userId,
-              photos[index],
-              index === 0,
-              preparedPhotos[index],
-            ),
+          const result = await quarantineAndModerateArtworkPhoto(
+            env,
+            artworkId,
+            userId,
+            photos[index],
+            index === 0,
+            preparedPhotos[index],
           );
+          moderation.push(result);
+
+          if (result.state === "manual_review") {
+            queueImageModerationReviewAlert(env, ctx, result.id);
+          }
         }
 
         return Response.json(
@@ -1310,6 +1314,12 @@ export default {
     AND photos.moderation_state = 'approved'
   WHERE artworks.latitude BETWEEN ? AND ?
     AND artworks.longitude BETWEEN ? AND ?
+    AND EXISTS (
+      SELECT 1
+      FROM photos AS publishable_photo
+      WHERE publishable_photo.artwork_id = artworks.id
+        AND publishable_photo.moderation_state = 'approved'
+    )
   `)
         .bind(
           latitude - latitudeDelta,
@@ -1404,6 +1414,12 @@ export default {
     FROM artists
     LEFT JOIN artworks
       ON artworks.artist_id = artists.id
+      AND EXISTS (
+        SELECT 1
+        FROM photos AS publishable_photo
+        WHERE publishable_photo.artwork_id = artworks.id
+          AND publishable_photo.moderation_state = 'approved'
+      )
     GROUP BY artists.id
     HAVING COUNT(artworks.id) > 0
     ORDER BY artists.name COLLATE NOCASE
@@ -1435,6 +1451,12 @@ export default {
       ) AS primary_photo
     FROM artworks
     WHERE artworks.artist_id IS NULL
+      AND EXISTS (
+        SELECT 1
+        FROM photos AS publishable_photo
+        WHERE publishable_photo.artwork_id = artworks.id
+          AND publishable_photo.moderation_state = 'approved'
+      )
   `).first<{
         artwork_count: number;
         primary_photo: string | null;
@@ -1448,6 +1470,12 @@ export default {
     FROM artworks
     WHERE latitude IS NOT NULL
       AND longitude IS NOT NULL
+      AND EXISTS (
+        SELECT 1
+        FROM photos AS publishable_photo
+        WHERE publishable_photo.artwork_id = artworks.id
+          AND publishable_photo.moderation_state = 'approved'
+      )
   `).all<{
         artist_id: number | null;
         latitude: number;
@@ -1539,6 +1567,12 @@ export default {
         AND photos.is_primary = 1
         AND photos.moderation_state = 'approved'
       WHERE artworks.artist_id IS NULL
+        AND EXISTS (
+          SELECT 1
+          FROM photos AS publishable_photo
+          WHERE publishable_photo.artwork_id = artworks.id
+            AND publishable_photo.moderation_state = 'approved'
+        )
       ORDER BY artworks.created_at DESC
     `).all();
 
@@ -1598,6 +1632,12 @@ artworks.created_at,
           AND photos.is_primary = 1
           AND photos.moderation_state = 'approved'
         WHERE artworks.artist_id = ?
+          AND EXISTS (
+            SELECT 1
+            FROM photos AS publishable_photo
+            WHERE publishable_photo.artwork_id = artworks.id
+              AND publishable_photo.moderation_state = 'approved'
+          )
         ORDER BY artworks.created_at DESC
       `)
         .bind(numericArtistId)
@@ -1647,6 +1687,12 @@ photos.created_at AS photo_added_at
           ON photos.artwork_id = artworks.id
           AND photos.is_primary = 1
           AND photos.moderation_state = 'approved'
+        WHERE EXISTS (
+          SELECT 1
+          FROM photos AS publishable_photo
+          WHERE publishable_photo.artwork_id = artworks.id
+            AND publishable_photo.moderation_state = 'approved'
+        )
         ORDER BY artworks.created_at DESC
       `).all();
 
@@ -1663,6 +1709,12 @@ photos.created_at AS photo_added_at
         SELECT id, status, created_at
         FROM artworks
         WHERE id = ?
+          AND EXISTS (
+            SELECT 1
+            FROM photos AS publishable_photo
+            WHERE publishable_photo.artwork_id = artworks.id
+              AND publishable_photo.moderation_state = 'approved'
+          )
         LIMIT 1
       `)
         .bind(artworkId)
@@ -1735,6 +1787,12 @@ photos.created_at AS photo_added_at
         SELECT id
         FROM artworks
         WHERE id = ?
+          AND EXISTS (
+            SELECT 1
+            FROM photos AS publishable_photo
+            WHERE publishable_photo.artwork_id = artworks.id
+              AND publishable_photo.moderation_state = 'approved'
+          )
         LIMIT 1
       `)
         .bind(artworkId)
@@ -1931,6 +1989,12 @@ if (artworkDetailMatch && request.method === "GET") {
     LEFT JOIN artists
       ON artworks.artist_id = artists.id
     WHERE artworks.id = ?
+      AND EXISTS (
+        SELECT 1
+        FROM photos AS publishable_photo
+        WHERE publishable_photo.artwork_id = artworks.id
+          AND publishable_photo.moderation_state = 'approved'
+      )
     LIMIT 1
   `)
     .bind(artworkId)
@@ -2337,6 +2401,12 @@ artists.name AS artist_name,
           AND photos.is_primary = 1
           AND photos.moderation_state = 'approved'
         WHERE checkins.user_id = ?
+          AND EXISTS (
+            SELECT 1
+            FROM photos AS publishable_photo
+            WHERE publishable_photo.artwork_id = artworks.id
+              AND publishable_photo.moderation_state = 'approved'
+          )
         ORDER BY checkins.checked_in_at DESC
       `)
         .bind(userId)
@@ -2456,16 +2526,19 @@ artists.name AS artist_name,
         const moderation = [];
 
         for (let index = 0; index < photos.length; index++) {
-          moderation.push(
-            await quarantineAndModerateArtworkPhoto(
-              env,
-              artworkId,
-              userId,
-              photos[index],
-              false,
-              preparedPhotos[index],
-            ),
+          const result = await quarantineAndModerateArtworkPhoto(
+            env,
+            artworkId,
+            userId,
+            photos[index],
+            false,
+            preparedPhotos[index],
           );
+          moderation.push(result);
+
+          if (result.state === "manual_review") {
+            queueImageModerationReviewAlert(env, ctx, result.id);
+          }
         }
 
         return Response.json({
@@ -2508,6 +2581,13 @@ artists.name AS artist_name,
         SELECT id
         FROM artworks
         WHERE id = ?
+          AND EXISTS (
+            SELECT 1
+            FROM photos AS publishable_photo
+            WHERE publishable_photo.artwork_id = artworks.id
+              AND publishable_photo.moderation_state = 'approved'
+          )
+        LIMIT 1
       `)
         .bind(artworkId)
         .first();

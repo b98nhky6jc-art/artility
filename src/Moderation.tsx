@@ -177,12 +177,18 @@ function ModerationCaseCard({
           </p>
         </div>
 
-        <Link
-          to={`/artwork/${item.subject.id}`}
-          className="moderation-artwork-link"
-        >
-          View artwork →
-        </Link>
+        {isImageCase ? (
+          <span className="moderation-artwork-link moderation-artwork-private">
+            Not public yet
+          </span>
+        ) : (
+          <Link
+            to={`/artwork/${item.subject.id}`}
+            className="moderation-artwork-link"
+          >
+            View artwork →
+          </Link>
+        )}
       </div>
 
       <div className="moderation-case-body">

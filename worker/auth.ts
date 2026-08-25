@@ -250,6 +250,80 @@ async function deliverArtworkStatusReportAlert(
   return readResendMessageId(response, "Artwork status report alert");
 }
 
+async function deliverImageModerationReviewAlert(env: Env, photoId: number) {
+  const photo = await env.DB.prepare(`
+    SELECT
+      photos.id,
+      photos.artwork_id,
+      photos.moderation_reason,
+      photos.created_at,
+      artworks.title AS artwork_title,
+      artworks.town,
+      artworks.city,
+      users.name AS uploader_name,
+      users.email AS uploader_email
+    FROM photos
+    INNER JOIN artworks
+      ON artworks.id = photos.artwork_id
+    LEFT JOIN "user" AS users
+      ON users.id = photos.uploaded_by
+    WHERE photos.id = ?
+      AND photos.moderation_state = 'manual_review'
+    LIMIT 1
+  `)
+    .bind(photoId)
+    .first<{
+      id: number;
+      artwork_id: number;
+      moderation_reason: string | null;
+      created_at: string;
+      artwork_title: string | null;
+      town: string | null;
+      city: string | null;
+      uploader_name: string | null;
+      uploader_email: string | null;
+    }>();
+
+  if (!photo) {
+    return null;
+  }
+
+  const artworkTitle =
+    photo.artwork_title?.trim() || `Artwork #${photo.artwork_id}`;
+  const location =
+    [photo.town, photo.city].filter(Boolean).join(", ") || "Not recorded";
+  const uploader = photo.uploader_email
+    ? `${photo.uploader_name?.trim() || "Not provided"} <${photo.uploader_email}>`
+    : photo.uploader_name?.trim() || "Not recorded";
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${env.RESEND_API_KEY}`,
+      "content-type": "application/json",
+      "user-agent": "artility-worker/1.0",
+    },
+    body: JSON.stringify({
+      from: "Artility <alerts@send.artility.co.uk>",
+      to: getAlertRecipients(env),
+      subject: `Image needs review · ${artworkTitle}`,
+      text: [
+        "An artwork image is waiting for manual review.",
+        "",
+        `Artwork: ${artworkTitle}`,
+        `Location: ${location}`,
+        `Uploader: ${uploader}`,
+        `Submitted: ${photo.created_at}`,
+        `Reason: ${photo.moderation_reason || "Automated moderation requested review"}`,
+        "",
+        "The artwork and quarantined image are not publicly visible.",
+        "Review image: https://artility.co.uk/admin/moderation",
+      ].join("\n"),
+    }),
+  });
+
+  return readResendMessageId(response, "Image moderation alert");
+}
+
 type EmailNotificationEvent =
   | "new_registration"
   | "artwork_status_report";
@@ -367,6 +441,96 @@ async function enqueueAndProcessEmailNotification(
   await processNextEmailNotification(env);
 }
 
+async function processNextImageModerationAlert(env: Env) {
+  await env.DB.prepare(`
+    UPDATE image_moderation_alert_outbox
+    SET state = 'failed',
+        last_error = 'Delivery claim expired before completion',
+        next_attempt_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE state = 'sending'
+      AND updated_at < datetime('now', '-10 minutes')
+  `).run();
+
+  const notification = await env.DB.prepare(`
+    SELECT id, photo_id
+    FROM image_moderation_alert_outbox
+    WHERE state IN ('pending', 'failed')
+      AND attempt_count < 5
+      AND next_attempt_at <= CURRENT_TIMESTAMP
+    ORDER BY created_at ASC, id ASC
+    LIMIT 1
+  `).first<{ id: number; photo_id: number }>();
+
+  if (!notification) {
+    return;
+  }
+
+  const claimed = await env.DB.prepare(`
+    UPDATE image_moderation_alert_outbox
+    SET state = 'sending',
+        attempt_count = attempt_count + 1,
+        last_error = NULL,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+      AND state IN ('pending', 'failed')
+  `)
+    .bind(notification.id)
+    .run();
+
+  if (Number(claimed.meta.changes ?? 0) !== 1) {
+    return;
+  }
+
+  try {
+    const providerMessageId = await deliverImageModerationReviewAlert(
+      env,
+      notification.photo_id,
+    );
+
+    await env.DB.prepare(`
+      UPDATE image_moderation_alert_outbox
+      SET state = 'sent',
+          provider_message_id = ?,
+          last_error = NULL,
+          sent_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `)
+      .bind(providerMessageId, notification.id)
+      .run();
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unknown delivery error";
+
+    await env.DB.prepare(`
+      UPDATE image_moderation_alert_outbox
+      SET state = 'failed',
+          last_error = ?,
+          next_attempt_at = datetime('now', '+5 minutes'),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `)
+      .bind(message.slice(0, 1500), notification.id)
+      .run();
+
+    throw error;
+  }
+}
+
+async function enqueueAndProcessImageModerationAlert(
+  env: Env,
+  photoId: number,
+) {
+  await env.DB.prepare(`
+    INSERT OR IGNORE INTO image_moderation_alert_outbox (photo_id)
+    VALUES (?)
+  `)
+    .bind(photoId)
+    .run();
+  await processNextImageModerationAlert(env);
+}
+
 export function queueArtworkStatusReportAlert(
   env: Env,
   ctx: ExecutionContext,
@@ -383,14 +547,31 @@ export function queueArtworkStatusReportAlert(
   );
 }
 
+export function queueImageModerationReviewAlert(
+  env: Env,
+  ctx: ExecutionContext,
+  photoId: number,
+) {
+  ctx.waitUntil(
+    enqueueAndProcessImageModerationAlert(env, photoId).catch((error) => {
+      console.error("Image moderation alert failed:", error);
+    }),
+  );
+}
+
 export function continueEmailNotificationDelivery(
   env: Env,
   ctx: ExecutionContext,
 ) {
   ctx.waitUntil(
-    processNextEmailNotification(env).catch((error) => {
-      console.error("Email notification delivery failed:", error);
-    }),
+    Promise.all([
+      processNextEmailNotification(env).catch((error) => {
+        console.error("Email notification delivery failed:", error);
+      }),
+      processNextImageModerationAlert(env).catch((error) => {
+        console.error("Image moderation alert delivery failed:", error);
+      }),
+    ]).then(() => undefined),
   );
 }
 

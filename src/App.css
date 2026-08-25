@@ -573,6 +573,13 @@ main {
   display: block;
 }
 
+.artwork-photo-unavailable {
+  padding: 24px;
+  color: var(--text-primary);
+  font-weight: 800;
+  text-align: center;
+}
+
 .artwork-number {
   position: absolute;
 
@@ -2343,6 +2350,14 @@ main {
 
 .moderation-artwork-link:hover {
   text-decoration: underline;
+}
+
+.moderation-artwork-private {
+  color: var(--text-secondary);
+}
+
+.moderation-artwork-private:hover {
+  text-decoration: none;
 }
 
 .moderation-case-body {
