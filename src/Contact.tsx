@@ -10,8 +10,8 @@ export default function Contact() {
         </Link>
       </header>
 
-      <main className="detail-main">
-        <section className="contact-panel">
+      <main className="detail-main page-main">
+        <section className="page-panel contact-panel">
           <span className="eyebrow">GET IN TOUCH</span>
 
           <h1>Contact</h1>

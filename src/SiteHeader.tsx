@@ -46,6 +46,7 @@ export default function SiteHeader() {
   }, [location.hash, location.pathname]);
 
   const isArtists = location.pathname.startsWith("/artist");
+  const isExplore = location.pathname === "/";
   const isContact = location.pathname === "/contact";
   const isAddArtwork = location.pathname === "/add-artwork";
   const isAccount =
@@ -68,6 +69,7 @@ export default function SiteHeader() {
         <Link
           to="/#nearby"
           className="nav-link"
+          aria-current={isExplore ? "page" : undefined}
           onClick={() => window.setTimeout(scrollToNearby, 0)}
         >
           Explore

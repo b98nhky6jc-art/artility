@@ -214,9 +214,9 @@ export default function Artists() {
         </Link>
       </header>
 
-      <main className="detail-main">
+      <main className="detail-main page-main">
         <div className="artists-page">
-          <section className="artists-hero">
+          <section className="page-panel artists-hero">
             <div className="artists-hero-copy">
               <span className="eyebrow">DISCOVER</span>
 

@@ -504,8 +504,8 @@ export default function AddArtwork() {
         </Link>
       </header>
 
-      <main className="detail-main">
-        <section className="add-artwork-panel">
+      <main className="detail-main page-main">
+        <section className="page-panel add-artwork-panel">
           {session?.user && !canContribute && (
             <>
               <span className="eyebrow">VERIFICATION REQUIRED</span>

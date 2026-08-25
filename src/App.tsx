@@ -61,8 +61,8 @@ function App() {
         </div>
       )}
 
-      <main>
-        <section className="hero" id="map">
+      <main className="page-main home-main">
+        <section className="page-panel hero" id="map">
           <div className="hero-copy">
             <span className="location-pill">📍 Leeds</span>
 

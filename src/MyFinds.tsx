@@ -64,8 +64,8 @@ export default function MyFinds() {
         </Link>
       </header>
 
-      <main className="detail-main">
-        <section className="profile-summary">
+      <main className="detail-main page-main">
+        <section className="page-panel profile-summary">
           <div>
             <span className="eyebrow">PROFILE</span>
             <h1>My Finds</h1>
