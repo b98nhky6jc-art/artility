@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 
-type ModeratorAccess = {
-  isModerator: boolean;
-  role: "admin" | "moderator" | null;
+type AdminAccess = {
+  isAdmin: boolean;
+  role: "admin" | null;
 };
 
 let cachedUserId: string | null = null;
-let cachedAccessRequest: Promise<ModeratorAccess> | null = null;
+let cachedAccessRequest: Promise<AdminAccess> | null = null;
 
-function loadModeratorAccess(userId: string) {
+function loadAdminAccess(userId: string) {
   if (cachedUserId === userId && cachedAccessRequest) {
     return cachedAccessRequest;
   }
@@ -19,27 +19,27 @@ function loadModeratorAccess(userId: string) {
   })
     .then(async (response) => {
       if (!response.ok) {
-        return { isModerator: false, role: null } as ModeratorAccess;
+        return { isAdmin: false, role: null } as AdminAccess;
       }
 
       const data = (await response.json()) as {
-        is_moderator?: boolean;
-        role?: "admin" | "moderator";
+        is_admin?: boolean;
+        role?: "admin";
       };
 
       return {
-        isModerator: Boolean(data.is_moderator),
+        isAdmin: Boolean(data.is_admin),
         role: data.role ?? null,
       };
     })
-    .catch(() => ({ isModerator: false, role: null }));
+    .catch(() => ({ isAdmin: false, role: null }));
 
   return cachedAccessRequest;
 }
 
-export function useModeratorAccess(userId?: string) {
-  const [access, setAccess] = useState<ModeratorAccess>({
-    isModerator: false,
+export function useAdminAccess(userId?: string) {
+  const [access, setAccess] = useState<AdminAccess>({
+    isAdmin: false,
     role: null,
   });
 
@@ -52,7 +52,7 @@ export function useModeratorAccess(userId?: string) {
       return;
     }
 
-    void loadModeratorAccess(userId).then((result) => {
+    void loadAdminAccess(userId).then((result) => {
       if (isCurrent) {
         setAccess(result);
       }
@@ -65,5 +65,5 @@ export function useModeratorAccess(userId?: string) {
 
   return userId
     ? access
-    : { isModerator: false, role: null };
+    : { isAdmin: false, role: null };
 }

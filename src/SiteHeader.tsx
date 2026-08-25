@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Link, useLocation } from "react-router";
 import "./App.css";
 import { authClient } from "./lib/auth-client";
-import { useModeratorAccess } from "./useModeratorAccess";
+import { useAdminAccess } from "./useModeratorAccess";
 
 function scrollToNearby(behavior: ScrollBehavior = "smooth") {
   document.getElementById("nearby")?.scrollIntoView({
@@ -14,7 +14,7 @@ function scrollToNearby(behavior: ScrollBehavior = "smooth") {
 export default function SiteHeader() {
   const location = useLocation();
   const { data: session } = authClient.useSession();
-  const { isModerator } = useModeratorAccess(session?.user.id);
+  const { isAdmin } = useAdminAccess(session?.user.id);
 
   useEffect(() => {
     if (location.pathname !== "/" || location.hash !== "#nearby") {
@@ -102,7 +102,7 @@ export default function SiteHeader() {
           Add artwork
         </Link>
 
-        {isModerator && (
+        {isAdmin && (
           <Link
             to="/admin/moderation"
             className="nav-link moderation-nav-link"

@@ -128,7 +128,14 @@ function formatBytes(value: number | null) {
     : `${Math.ceil(value / 1024)} KB`;
 }
 
-function getFlaggedCategories(value: string | null) {
+function getFlaggedCategories(
+  value: string | null,
+  moderationError: string | null,
+) {
+  if (moderationError) {
+    return "No moderation result";
+  }
+
   if (!value) {
     return "None recorded";
   }
@@ -148,13 +155,17 @@ function getFlaggedCategories(value: string | null) {
 function ModerationCaseCard({
   item,
   reviewing,
+  deleting,
   error,
   onDecision,
+  onDelete,
 }: {
   item: ModerationCase;
   reviewing: Decision | null;
+  deleting: boolean;
   error: string;
   onDecision: (item: ModerationCase, decision: Decision) => void;
+  onDelete: (item: ModerationCase) => void;
 }) {
   const reporter =
     item.reporter.name || item.reporter.email || item.reporter.id || "Unknown";
@@ -225,7 +236,12 @@ function ModerationCaseCard({
               <dl className="moderation-metadata">
                 <div>
                   <dt>Automated result</dt>
-                  <dd>{getFlaggedCategories(item.payload.categories)}</dd>
+                  <dd>
+                    {getFlaggedCategories(
+                      item.payload.categories,
+                      item.payload.moderation_error,
+                    )}
+                  </dd>
                 </div>
                 <div>
                   <dt>Normalized image</dt>
@@ -306,7 +322,7 @@ function ModerationCaseCard({
         <button
           type="button"
           className="moderation-approve-button"
-          disabled={reviewing !== null}
+          disabled={reviewing !== null || deleting}
           onClick={() => onDecision(item, "approved")}
         >
           {reviewing === "approved" ? "Approving…" : "Approve"}
@@ -314,10 +330,18 @@ function ModerationCaseCard({
         <button
           type="button"
           className="moderation-reject-button"
-          disabled={reviewing !== null}
+          disabled={reviewing !== null || deleting}
           onClick={() => onDecision(item, "rejected")}
         >
           {reviewing === "rejected" ? "Rejecting…" : "Reject"}
+        </button>
+        <button
+          type="button"
+          className="moderation-delete-button"
+          disabled={reviewing !== null || deleting}
+          onClick={() => onDelete(item)}
+        >
+          {deleting ? "Deleting…" : "Delete artwork"}
         </button>
       </div>
     </article>
@@ -335,6 +359,9 @@ export default function Moderation() {
   const [notice, setNotice] = useState("");
   const [bulkApproving, setBulkApproving] = useState(false);
   const [bulkError, setBulkError] = useState("");
+  const [deletingArtworkId, setDeletingArtworkId] = useState<number | null>(
+    null,
+  );
 
   const loadQueue = useCallback(async () => {
     setQueueState("loading");
@@ -424,6 +451,46 @@ export default function Moderation() {
     }
   }
 
+  async function deleteArtwork(item: ModerationCase) {
+    if (
+      !window.confirm(
+        `Permanently delete ${getArtworkTitle(item)} and all of its photos, check-ins, reports and history? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    setDeletingArtworkId(item.subject.id);
+    setCaseErrors((current) => ({ ...current, [item.id]: "" }));
+    setNotice("");
+
+    try {
+      const response = await fetch(`/api/admin/artworks/${item.subject.id}`, {
+        method: "DELETE",
+      });
+      const data = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Could not delete this artwork.");
+      }
+
+      setItems((current) =>
+        current.filter((entry) => entry.subject.id !== item.subject.id),
+      );
+      setNotice(`${getArtworkTitle(item)} and its associated data were deleted.`);
+    } catch (error) {
+      setCaseErrors((current) => ({
+        ...current,
+        [item.id]:
+          error instanceof Error
+            ? error.message
+            : "Could not delete this artwork.",
+      }));
+    } finally {
+      setDeletingArtworkId(null);
+    }
+  }
+
   const imageCases = items.filter(
     (item): item is ArtworkPhotoModerationCase =>
       item.case_type === "artwork_photo",
@@ -505,7 +572,7 @@ export default function Moderation() {
         <section className="page-panel moderation-access-panel">
           <span className="eyebrow">CONTENT REVIEW</span>
           <h1>Sign in to continue</h1>
-          <p>Moderator access is required to review content.</p>
+          <p>Administrator access is required to review content.</p>
           <Link to="/login" className="report-signin-link">
             Sign in
           </Link>
@@ -519,8 +586,8 @@ export default function Moderation() {
       <main className="page-main moderation-page">
         <section className="page-panel moderation-access-panel">
           <span className="eyebrow">CONTENT REVIEW</span>
-          <h1>Moderator access required</h1>
-          <p>This queue is available only to Artility admins and moderators.</p>
+          <h1>Administrator access required</h1>
+          <p>This queue is available only to Artility administrators.</p>
           <Link to="/" className="report-signin-link">
             Return to Explore
           </Link>
@@ -564,7 +631,9 @@ export default function Moderation() {
           <button
             type="button"
             className="moderation-approve-button moderation-bulk-approve"
-            disabled={bulkApproving || reviewing !== null}
+            disabled={
+              bulkApproving || reviewing !== null || deletingArtworkId !== null
+            }
             onClick={() => void bulkApproveImages()}
           >
             {bulkApproving
@@ -610,8 +679,10 @@ export default function Moderation() {
               reviewing={
                 reviewing?.id === item.id ? reviewing.decision : null
               }
+              deleting={deletingArtworkId === item.subject.id}
               error={caseErrors[item.id] ?? ""}
               onDecision={reviewCase}
+              onDelete={deleteArtwork}
             />
           ))}
         </section>

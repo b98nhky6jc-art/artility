@@ -794,6 +794,91 @@ export async function purgeExpiredRejectedArtworks(env: Env) {
   return { candidates: candidates.results.length, purged };
 }
 
+export async function deleteArtworkAndAssets(env: Env, artworkId: number) {
+  const artwork = await env.DB.prepare(`
+    SELECT id
+    FROM artworks
+    WHERE id = ?
+    LIMIT 1
+  `)
+    .bind(artworkId)
+    .first<{ id: number }>();
+
+  if (!artwork) {
+    return { deleted: false, assetCount: 0 };
+  }
+
+  const assets = await env.DB.prepare(`
+    SELECT storage_key, thumbnail_key
+    FROM photos
+    WHERE artwork_id = ?
+    UNION ALL
+    SELECT photo_storage_key AS storage_key, NULL AS thumbnail_key
+    FROM artwork_status_reports
+    WHERE artwork_id = ?
+      AND photo_storage_key IS NOT NULL
+  `)
+    .bind(artworkId, artworkId)
+    .all<{ storage_key: string; thumbnail_key: string | null }>();
+  const assetKeys = [
+    ...new Set(
+      assets.results.flatMap((asset) =>
+        [asset.storage_key, asset.thumbnail_key].filter(
+          (key): key is string => Boolean(key),
+        ),
+      ),
+    ),
+  ];
+
+  const results = await env.DB.batch([
+    env.DB.prepare(`
+      DELETE FROM image_moderation_alert_outbox
+      WHERE photo_id IN (
+        SELECT id FROM photos WHERE artwork_id = ?
+      )
+    `).bind(artworkId),
+    env.DB.prepare(`
+      DELETE FROM email_notification_outbox
+      WHERE event_type = 'artwork_status_report'
+        AND entity_id IN (
+          SELECT CAST(id AS TEXT)
+          FROM artwork_status_reports
+          WHERE artwork_id = ?
+        )
+    `).bind(artworkId),
+    env.DB.prepare(`DELETE FROM checkins WHERE artwork_id = ?`).bind(
+      artworkId,
+    ),
+    env.DB.prepare(`DELETE FROM artwork_revisions WHERE artwork_id = ?`).bind(
+      artworkId,
+    ),
+    env.DB.prepare(`
+      UPDATE artwork_status_reports
+      SET replacement_artwork_id = NULL
+      WHERE replacement_artwork_id = ?
+    `).bind(artworkId),
+    env.DB.prepare(`DELETE FROM artwork_status_reports WHERE artwork_id = ?`).bind(
+      artworkId,
+    ),
+    env.DB.prepare(`DELETE FROM photos WHERE artwork_id = ?`).bind(artworkId),
+    env.DB.prepare(`DELETE FROM artworks WHERE id = ?`).bind(artworkId),
+  ]);
+
+  const deleted = Number(results.at(-1)?.meta.changes ?? 0) === 1;
+
+  if (deleted && assetKeys.length > 0) {
+    try {
+      await env.IMAGES.delete(assetKeys);
+    } catch (error) {
+      // The database no longer exposes the artwork or its images. Retain a log
+      // so an orphaned R2 object can be cleaned up without restoring access.
+      console.error("Artwork R2 cleanup failed", { artworkId, error });
+    }
+  }
+
+  return { deleted, assetCount: assetKeys.length };
+}
+
 function createVerificationLandingResponse(
   authResponse: Response,
   requestUrl: URL,
@@ -915,8 +1000,8 @@ export default {
       return { ok: true, userId: session.user.id };
     }
 
-    async function requireModerator(): Promise<
-      | { ok: true; userId: string; role: "admin" | "moderator" }
+    async function requireAdmin(): Promise<
+      | { ok: true; userId: string; role: "admin" }
       | { ok: false; response: Response }
     > {
       const session = await auth.api.getSession({
@@ -937,17 +1022,17 @@ export default {
         SELECT role
         FROM user_roles
         WHERE user_id = ?
-          AND role IN ('admin', 'moderator')
+          AND role = 'admin'
         LIMIT 1
       `)
         .bind(session.user.id)
-        .first<{ role: "admin" | "moderator" }>();
+        .first<{ role: "admin" }>();
 
       if (!role) {
         return {
           ok: false,
           response: Response.json(
-            { error: "Moderator access required", code: "FORBIDDEN" },
+            { error: "Administrator access required", code: "FORBIDDEN" },
             { status: 403 },
           ),
         };
@@ -1002,16 +1087,43 @@ export default {
       url.pathname === "/api/admin/moderation/access" &&
       request.method === "GET"
     ) {
-      const access = await requireModerator();
+      const access = await requireAdmin();
 
       if (!access.ok) {
         return access.response;
       }
 
       return Response.json({
-        is_moderator: true,
+        is_admin: true,
         role: access.role,
       });
+    }
+
+    const adminArtworkMatch = url.pathname.match(
+      /^\/api\/admin\/artworks\/(\d+)$/,
+    );
+
+    if (adminArtworkMatch && request.method === "DELETE") {
+      const access = await requireAdmin();
+
+      if (!access.ok) {
+        return access.response;
+      }
+
+      const artworkId = Number(adminArtworkMatch[1]);
+      const result = await deleteArtworkAndAssets(env, artworkId);
+
+      if (!result.deleted) {
+        return Response.json({ error: "Artwork not found" }, { status: 404 });
+      }
+
+      console.info("Administrator deleted artwork", {
+        artworkId,
+        administratorId: access.userId,
+        removedAssetCount: result.assetCount,
+      });
+
+      return Response.json({ success: true, artwork_id: artworkId });
     }
 
     const privateModerationImageMatch = url.pathname.match(
@@ -1019,7 +1131,7 @@ export default {
     );
 
     if (privateModerationImageMatch && request.method === "GET") {
-      const access = await requireModerator();
+      const access = await requireAdmin();
 
       if (!access.ok) {
         return access.response;
@@ -1071,7 +1183,7 @@ export default {
       url.pathname === "/api/admin/moderation/cases" &&
       request.method === "GET"
     ) {
-      const access = await requireModerator();
+      const access = await requireAdmin();
 
       if (!access.ok) {
         return access.response;
@@ -1286,7 +1398,7 @@ export default {
     );
 
     if (moderationDecisionMatch && request.method === "POST") {
-      const access = await requireModerator();
+      const access = await requireAdmin();
 
       if (!access.ok) {
         return access.response;
@@ -1394,7 +1506,7 @@ export default {
         "/api/admin/moderation/cases/artwork-photo/bulk-approve" &&
       request.method === "POST"
     ) {
-      const access = await requireModerator();
+      const access = await requireAdmin();
 
       if (!access.ok) {
         return access.response;
@@ -1474,7 +1586,7 @@ export default {
     );
 
     if (imageModerationDecisionMatch && request.method === "POST") {
-      const access = await requireModerator();
+      const access = await requireAdmin();
 
       if (!access.ok) {
         return access.response;
@@ -1540,7 +1652,7 @@ export default {
               moderation_reason = COALESCE(
                 moderation_reason || ' ',
                 ''
-              ) || 'Rejected by a moderator.'
+              ) || 'Rejected by an administrator.'
           WHERE id = ?
             AND moderation_state = 'manual_review'
         `)

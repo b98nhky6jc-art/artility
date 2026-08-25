@@ -863,6 +863,28 @@ main {
   color: var(--ink);
 }
 
+.detail-map-section {
+  margin-top: var(--section-gap);
+}
+
+.detail-map-section > div:first-child {
+  margin-bottom: 22px;
+  text-align: center;
+}
+
+.detail-map-section h2 {
+  margin: 7px 0 0;
+  font-size: clamp(32px, 3.4vw, 48px);
+  line-height: 1;
+  letter-spacing: -2px;
+}
+
+.detail-map {
+  overflow: hidden;
+  border-radius: var(--radius-large);
+  box-shadow: 0 12px 32px var(--shadow-soft);
+}
+
 
 /* =========================================================
    ARTWORK ACTIVITY
@@ -1029,6 +1051,47 @@ main {
   background: var(--soft-yellow);
 }
 
+.detail-management-actions {
+  margin: 12px 0 18px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.detail-management-actions .edit-details-button {
+  margin: 0;
+}
+
+.delete-artwork-button,
+.moderation-delete-button {
+  padding: 10px 16px;
+  border: 1px solid var(--red);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--danger);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.delete-artwork-button:hover:not(:disabled),
+.moderation-delete-button:hover:not(:disabled) {
+  background: var(--soft-red);
+}
+
+.delete-artwork-button:focus-visible,
+.moderation-delete-button:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.delete-artwork-button:disabled,
+.moderation-delete-button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
 .edit-details-form {
   width: 100%;
 
@@ -1184,7 +1247,7 @@ main {
   display: grid;
   grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.92fr);
   gap: clamp(22px, 2.6vw, 40px);
-  align-items: start;
+  align-items: stretch;
   text-align: left;
 }
 
@@ -2656,7 +2719,8 @@ main {
 }
 
 .moderation-approve-button,
-.moderation-reject-button {
+.moderation-reject-button,
+.moderation-delete-button {
   min-width: 128px;
   padding: 12px 18px;
   border-radius: var(--radius-pill);
@@ -2675,24 +2739,28 @@ main {
   background: var(--action-hover);
 }
 
-.moderation-reject-button {
+.moderation-reject-button,
+.moderation-delete-button {
   border: 1px solid var(--red);
   background: transparent;
   color: var(--danger);
 }
 
-.moderation-reject-button:hover:not(:disabled) {
+.moderation-reject-button:hover:not(:disabled),
+.moderation-delete-button:hover:not(:disabled) {
   background: var(--soft-red);
 }
 
 .moderation-approve-button:focus-visible,
-.moderation-reject-button:focus-visible {
+.moderation-reject-button:focus-visible,
+.moderation-delete-button:focus-visible {
   outline: 3px solid var(--focus-ring);
   outline-offset: 3px;
 }
 
 .moderation-approve-button:disabled,
-.moderation-reject-button:disabled {
+.moderation-reject-button:disabled,
+.moderation-delete-button:disabled {
   opacity: 0.55;
   cursor: wait;
 }
@@ -2865,6 +2933,18 @@ main {
     grid-template-columns: 1fr;
     gap: 18px;
     margin-top: 28px;
+  }
+
+  .detail-map-section {
+    margin-top: 36px;
+  }
+
+  .detail-map-section > div:first-child {
+    margin-bottom: 16px;
+  }
+
+  .detail-map {
+    border-radius: var(--radius-medium);
   }
 
   .status-history-panel,

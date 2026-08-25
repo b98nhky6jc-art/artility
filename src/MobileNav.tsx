@@ -1,12 +1,12 @@
 import { Link, useLocation, useNavigate } from "react-router";
 import { authClient } from "./lib/auth-client";
-import { useModeratorAccess } from "./useModeratorAccess";
+import { useAdminAccess } from "./useModeratorAccess";
 
 export default function MobileNav() {
   const location = useLocation();
   const navigate = useNavigate();
   const { data: session } = authClient.useSession();
-  const { isModerator } = useModeratorAccess(session?.user.id);
+  const { isAdmin } = useAdminAccess(session?.user.id);
 
   const signedIn = Boolean(session?.user);
 
@@ -72,7 +72,7 @@ export default function MobileNav() {
 
   return (
     <nav
-      className={`mobile-nav ${isModerator ? "has-moderation" : ""}`}
+      className={`mobile-nav ${isAdmin ? "has-moderation" : ""}`}
       aria-label="Main navigation"
     >
       <button
@@ -115,7 +115,7 @@ export default function MobileNav() {
         <span>Artists</span>
       </Link>
 
-      {isModerator && (
+      {isAdmin && (
         <Link
           to="/admin/moderation"
           className={isModeration ? "active" : ""}

@@ -7,7 +7,7 @@ import ArtistAttribution from "./ArtistAttribution";
 import EmailVerificationNotice from "./EmailVerificationNotice";
 import { canUserContribute } from "./emailVerification";
 import { formatInfrastructureType } from "../shared/infrastructure-types";
-import { useModeratorAccess } from "./useModeratorAccess";
+import { useAdminAccess } from "./useModeratorAccess";
 
 type Find = {
   instagram_handle: string | null;
@@ -27,7 +27,7 @@ export default function MyFinds() {
   const [finds, setFinds] = useState<Find[]>([]);
   const [loading, setLoading] = useState(true);
   const { data: session } = authClient.useSession();
-  const { isModerator } = useModeratorAccess(session?.user.id);
+  const { isAdmin } = useAdminAccess(session?.user.id);
   const canContribute = canUserContribute(session?.user);
 
   useEffect(() => {
@@ -82,7 +82,7 @@ export default function MyFinds() {
                 <Link to="/contact" className="profile-contact-link">
                   Contact
                 </Link>
-                {isModerator && (
+                {isAdmin && (
                   <Link
                     to="/admin/moderation"
                     className="profile-review-link"

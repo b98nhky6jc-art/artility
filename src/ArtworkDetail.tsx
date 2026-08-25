@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useLocation, useParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 import ArtworkMap from "./ArtworkMap";
 import "./App.css";
 import { getArtworkDisplayTitle } from "./artworkDisplay";
@@ -8,6 +8,7 @@ import { authClient } from "./lib/auth-client";
 import EmailVerificationNotice from "./EmailVerificationNotice";
 import { canUserContribute } from "./emailVerification";
 import ArtistAutocomplete from "./ArtistAutocomplete";
+import { useAdminAccess } from "./useModeratorAccess";
 import {
   formatInfrastructureType,
   INFRASTRUCTURE_TYPES,
@@ -130,6 +131,7 @@ function calculateDistanceMetres(
 
 export default function ArtworkDetail() {
   const location = useLocation();
+  const navigate = useNavigate();
   const uploadModeration = (
     location.state as {
       uploadModeration?: "review" | "rejected" | null;
@@ -162,11 +164,14 @@ export default function ArtworkDetail() {
       : "Location is not supported by this browser.",
   );
   const { data: session } = authClient.useSession();
+  const { isAdmin } = useAdminAccess(session?.user.id);
   const canContribute = canUserContribute(session?.user);
 
   const [editing, setEditing] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState("");
+  const [deletingArtwork, setDeletingArtwork] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const [editTitle, setEditTitle] = useState("");
   const [editArtistName, setEditArtistName] = useState("");
@@ -199,6 +204,38 @@ export default function ArtworkDetail() {
 
     setEditError("");
     setEditing(true);
+  }
+
+  async function deleteArtwork() {
+    if (
+      !artwork ||
+      !window.confirm(
+        `Permanently delete ${getArtworkDisplayTitle(artwork)} and all of its photos, check-ins, reports and history? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    setDeletingArtwork(true);
+    setDeleteError("");
+
+    try {
+      const response = await fetch(`/api/admin/artworks/${artwork.id}`, {
+        method: "DELETE",
+      });
+      const data = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Could not delete this artwork.");
+      }
+
+      navigate("/", { replace: true });
+    } catch (error) {
+      setDeleteError(
+        error instanceof Error ? error.message : "Could not delete this artwork.",
+      );
+      setDeletingArtwork(false);
+    }
   }
 
   async function saveEdits(event: React.FormEvent<HTMLFormElement>) {
@@ -589,14 +626,34 @@ export default function ArtworkDetail() {
               <EmailVerificationNotice email={session.user.email} compact />
             )}
 
-            {canContribute && !editing && (
-              <button
-                type="button"
-                className="edit-details-button"
-                onClick={startEditing}
-              >
-                Edit details
-              </button>
+            {!editing && (canContribute || isAdmin) && (
+              <div className="detail-management-actions">
+                {canContribute && (
+                  <button
+                    type="button"
+                    className="edit-details-button"
+                    onClick={startEditing}
+                  >
+                    Edit details
+                  </button>
+                )}
+                {isAdmin && (
+                  <button
+                    type="button"
+                    className="delete-artwork-button"
+                    disabled={deletingArtwork}
+                    onClick={() => void deleteArtwork()}
+                  >
+                    {deletingArtwork ? "Deleting…" : "Delete artwork"}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {deleteError && (
+              <p className="form-error" role="alert">
+                {deleteError}
+              </p>
             )}
 
             {editing && (
