@@ -85,8 +85,6 @@ export default function Signup() {
         <Link to="/" className="back-link">
           ← Back to map
         </Link>
-
-        <span className="detail-number">Create account</span>
       </header>
 
       <main className="detail-main">

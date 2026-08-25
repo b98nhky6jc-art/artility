@@ -65,8 +65,6 @@ export default function Login() {
         <Link to="/" className="back-link">
           ← Back to map
         </Link>
-
-        <span className="detail-number">Sign in</span>
       </header>
 
       <main className="detail-main">

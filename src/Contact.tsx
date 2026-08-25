@@ -8,8 +8,6 @@ export default function Contact() {
         <Link to="/" className="back-link">
           ← Back to map
         </Link>
-
-        <span className="detail-number">Contact</span>
       </header>
 
       <main className="detail-main">

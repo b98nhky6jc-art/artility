@@ -352,8 +352,6 @@ export default function ArtworkDetail() {
         <Link to="/" className="back-link">
           ← Back to map
         </Link>
-
-        <span className="detail-number">Artwork #{artwork.id}</span>
       </header>
 
       <main className="detail-main">

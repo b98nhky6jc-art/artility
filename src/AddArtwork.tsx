@@ -502,8 +502,6 @@ export default function AddArtwork() {
         <Link to="/" className="back-link">
           ← Back to map
         </Link>
-
-        <span className="detail-number">New artwork</span>
       </header>
 
       <main className="detail-main">

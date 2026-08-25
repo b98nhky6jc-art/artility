@@ -105,11 +105,6 @@ export default function ArtistDetail() {
         <Link to="/artists" className="back-link">
           ← Artists
         </Link>
-
-        <span className="detail-number">
-          {artworks.length}{" "}
-          {artworks.length === 1 ? "artwork" : "artworks"}
-        </span>
       </header>
 
       <main className="detail-main">

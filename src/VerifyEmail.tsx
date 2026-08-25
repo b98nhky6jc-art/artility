@@ -24,8 +24,6 @@ export default function VerifyEmail() {
         <Link to="/" className="back-link">
           ← Back to map
         </Link>
-
-        <span className="detail-number">Email verification</span>
       </header>
 
       <main className="detail-main">

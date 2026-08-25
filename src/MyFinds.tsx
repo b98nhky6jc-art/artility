@@ -62,8 +62,6 @@ export default function MyFinds() {
         <Link to="/" className="back-link">
           ← Back to map
         </Link>
-
-        <span className="detail-number">My collection</span>
       </header>
 
       <main className="detail-main">
@@ -93,7 +91,6 @@ export default function MyFinds() {
                 </button>
               </div>
             )}
-
           </div>
 
           <div className="profile-stats">

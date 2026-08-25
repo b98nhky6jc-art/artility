@@ -625,7 +625,16 @@ export default {
     GROUP BY artists.id
     HAVING COUNT(artworks.id) > 0
     ORDER BY artists.name COLLATE NOCASE
-  `).all();
+  `).all<{
+        id: number;
+        name: string;
+        instagram_handle: string | null;
+        website_url: string | null;
+        bio: string | null;
+        created_at: string;
+        artwork_count: number;
+        primary_photo: string | null;
+      }>();
 
       const unknownResult = await env.DB.prepare(`
     SELECT
@@ -648,7 +657,57 @@ export default {
         primary_photo: string | null;
       }>();
 
-      const artists = [...result.results];
+      const locationResult = await env.DB.prepare(`
+    SELECT
+      artist_id,
+      latitude,
+      longitude
+    FROM artworks
+    WHERE latitude IS NOT NULL
+      AND longitude IS NOT NULL
+  `).all<{
+        artist_id: number | null;
+        latitude: number;
+        longitude: number;
+      }>();
+
+      const locationsByArtist = new Map<
+        string,
+        Array<{ latitude: number; longitude: number }>
+      >();
+
+      for (const location of locationResult.results) {
+        const key =
+          location.artist_id === null
+            ? "unknown"
+            : String(location.artist_id);
+        const locations = locationsByArtist.get(key) ?? [];
+
+        locations.push({
+          latitude: Number(location.latitude),
+          longitude: Number(location.longitude),
+        });
+        locationsByArtist.set(key, locations);
+      }
+
+      const artists: Array<{
+        id: number | "unknown";
+        name: string;
+        instagram_handle: string | null;
+        website_url: string | null;
+        bio: string | null;
+        created_at: string | null;
+        artwork_count: number;
+        primary_photo: string | null;
+        artwork_locations: Array<{
+          latitude: number;
+          longitude: number;
+        }>;
+      }> = result.results.map((artist) => ({
+        ...artist,
+        artwork_locations:
+          locationsByArtist.get(String(artist.id)) ?? [],
+      }));
 
       if (Number(unknownResult?.artwork_count ?? 0) > 0) {
         artists.unshift({
@@ -660,6 +719,7 @@ export default {
           created_at: null,
           artwork_count: Number(unknownResult?.artwork_count ?? 0),
           primary_photo: unknownResult?.primary_photo ?? null,
+          artwork_locations: locationsByArtist.get("unknown") ?? [],
         });
       }
 

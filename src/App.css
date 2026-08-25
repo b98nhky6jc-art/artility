@@ -761,15 +761,6 @@ main {
   text-decoration: underline;
 }
 
-.detail-number {
-  color: #6d746f;
-
-  font-size: 0.9rem;
-  font-weight: 700;
-
-  white-space: nowrap;
-}
-
 .detail-photo-wrap {
   width: 100%;
 
@@ -2200,8 +2191,7 @@ main {
     grid-template-columns: 1fr;
   }
 
-  .back-link,
-  .detail-number {
+  .back-link {
     font-size: 0.85rem;
   }
 }
@@ -2396,8 +2386,10 @@ main {
 /* Artist directory */
 
 .artists-header {
-  max-width: 720px;
-  margin-bottom: 34px;
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto 34px;
+  text-align: center;
 }
 
 .artists-header h1,
@@ -2405,9 +2397,17 @@ main {
   margin-bottom: 10px;
 }
 
-.artist-search {
+.artist-controls {
   width: 100%;
   margin-top: 22px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(210px, 0.38fr);
+  gap: 12px;
+}
+
+.artist-search,
+.artist-sort {
+  width: 100%;
   padding: 15px 18px;
   border: 1px solid var(--soft-line);
   border-radius: var(--radius-pill);
@@ -2416,9 +2416,31 @@ main {
   font: inherit;
 }
 
-.artist-search:focus {
+.artist-sort {
+  cursor: pointer;
+}
+
+.artist-search:focus,
+.artist-sort:focus {
   outline: 2px solid var(--teal);
   outline-offset: 2px;
+}
+
+.artist-sort-status {
+  min-height: 1.45em;
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.artist-sort-status button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-weight: 800;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .artist-directory {
@@ -2546,6 +2568,10 @@ main {
 }
 
 @media (max-width: 620px) {
+  .artist-controls {
+    grid-template-columns: 1fr;
+  }
+
   .artist-directory,
   .artist-artwork-grid {
     grid-template-columns: 1fr 1fr;
