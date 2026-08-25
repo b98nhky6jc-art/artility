@@ -215,100 +215,124 @@ export default function Artists() {
       </header>
 
       <main className="detail-main">
-        <section className="artists-header">
-          <span className="eyebrow">DISCOVER</span>
+        <div className="artists-page">
+          <section className="artists-hero">
+            <div className="artists-hero-copy">
+              <span className="eyebrow">DISCOVER</span>
 
-          <h1>Artists</h1>
+              <h1>Artists</h1>
 
-          <p>
-            Explore artists whose work has been found on Artility.
-          </p>
+              <p>
+                Explore artists whose work has been found on Artility.
+              </p>
+            </div>
 
-          <div className="artist-controls">
-            <input
-              className="artist-search"
-              type="search"
-              aria-label="Search artists"
-              placeholder="Search artists or Instagram…"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
+            <div className="artist-controls">
+              <input
+                className="artist-search"
+                type="search"
+                aria-label="Search artists"
+                placeholder="Search artists or Instagram…"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
 
-            <select
-              className="artist-sort"
-              aria-label="Sort artists"
-              value={sort}
-              onChange={handleSortChange}
-            >
-              <option value="az">A–Z</option>
-              <option value="newest">Most recently added</option>
-              <option value="oldest">Oldest added</option>
-              <option value="nearest">Closest to me</option>
-            </select>
-          </div>
+              <select
+                className="artist-sort"
+                aria-label="Sort artists"
+                value={sort}
+                onChange={handleSortChange}
+              >
+                <option value="az">A–Z</option>
+                <option value="newest">Most recently added</option>
+                <option value="oldest">Oldest added</option>
+                <option value="nearest">Closest to me</option>
+              </select>
+            </div>
 
-          {sort === "nearest" && (
-            <p className="artist-sort-status" aria-live="polite">
-              {locationStatus === "requesting" &&
-                "Getting your location…"}
-              {locationStatus === "ready" &&
-                "Showing artists with nearby work first."}
-              {locationStatus === "unavailable" && (
-                <>
-                  Location is unavailable. Check your browser permission or{" "}
-                  <button type="button" onClick={requestLocation}>
-                    try again
-                  </button>
-                  .
-                </>
-              )}
-            </p>
-          )}
-        </section>
-
-        {loading && <p>Loading artists…</p>}
-
-        {error && <p className="form-error">{error}</p>}
-
-        {!loading && !error && visibleArtists.length === 0 && (
-          <p>No artists found.</p>
-        )}
-
-        <div className="artist-directory">
-          {visibleArtists.map((artist) => (
-            <Link
-              key={artist.id}
-              to={`/artist/${artist.id}`}
-              className="artist-card"
-            >
-              {artist.primary_photo ? (
-                <img
-                  src={`/api/images/${artist.primary_photo}`}
-                  alt=""
-                  className="artist-card-image"
-                />
-              ) : (
-                <div className="artist-card-placeholder">
-                  ARTIST
-                </div>
-              )}
-
-              <div className="artist-card-copy">
-                <h2>{artist.name}</h2>
-
-                {artist.instagram_handle && (
-                  <p>@{artist.instagram_handle}</p>
+            {sort === "nearest" && (
+              <p className="artist-sort-status" aria-live="polite">
+                {locationStatus === "requesting" &&
+                  "Getting your location…"}
+                {locationStatus === "ready" &&
+                  "Showing artists with nearby work first."}
+                {locationStatus === "unavailable" && (
+                  <>
+                    Location is unavailable. Check your browser permission or{" "}
+                    <button type="button" onClick={requestLocation}>
+                      try again
+                    </button>
+                    .
+                  </>
                 )}
+              </p>
+            )}
+          </section>
 
-                <span>
-                  {artist.artwork_count}{" "}
-                  {Number(artist.artwork_count) === 1
-                    ? "artwork"
-                    : "artworks"}
-                </span>
+          <section
+            className="artist-directory-section"
+            aria-labelledby="artist-directory-heading"
+          >
+            <div className="artist-directory-heading">
+              <div>
+                <span className="eyebrow">DIRECTORY</span>
+                <h2 id="artist-directory-heading">Browse artists</h2>
               </div>
-            </Link>
-          ))}
+
+              <span className="artist-result-count" aria-live="polite">
+                {loading
+                  ? "Loading…"
+                  : `${visibleArtists.length} ${
+                      visibleArtists.length === 1 ? "artist" : "artists"
+                    }`}
+              </span>
+            </div>
+
+            {loading && <p className="message">Loading artists…</p>}
+
+            {error && <p className="form-error">{error}</p>}
+
+            {!loading && !error && visibleArtists.length === 0 && (
+              <p className="message">No artists found.</p>
+            )}
+
+            <div className="artist-directory">
+              {visibleArtists.map((artist) => (
+                <Link
+                  key={artist.id}
+                  to={`/artist/${artist.id}`}
+                  className="artist-card"
+                >
+                  {artist.primary_photo ? (
+                    <img
+                      src={`/api/images/${artist.primary_photo}`}
+                      alt=""
+                      className="artist-card-image"
+                    />
+                  ) : (
+                    <div className="artist-card-placeholder">
+                      ARTIST
+                    </div>
+                  )}
+
+                  <div className="artist-card-copy">
+                    <h2>{artist.name}</h2>
+
+                    {artist.instagram_handle && (
+                      <p>@{artist.instagram_handle}</p>
+                    )}
+
+                    <span>
+                      {artist.artwork_count}{" "}
+                      {Number(artist.artwork_count) === 1
+                        ? "artwork"
+                        : "artworks"}
+                    </span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
         </div>
       </main>
     </div>
