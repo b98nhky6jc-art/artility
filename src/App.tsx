@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import "./App.css";
 import ArtworkMap from "./ArtworkMap";
@@ -7,6 +7,13 @@ import { getArtworkDisplayTitle } from "./artworkDisplay";
 import ArtistAttribution from "./ArtistAttribution";
 import EmailVerificationNotice from "./EmailVerificationNotice";
 import { canUserContribute } from "./emailVerification";
+import {
+  ARTWORK_PAGE_SIZE,
+  formatDistance,
+  rankArtworksByDistance,
+  requestBrowserLocation,
+  type UserLocation,
+} from "./artworkDiscovery";
 
 
 type Artwork = {
@@ -29,6 +36,10 @@ function App() {
   const [artworks, setArtworks] = useState<Artwork[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
+  const [visibleArtworkCount, setVisibleArtworkCount] = useState(
+    ARTWORK_PAGE_SIZE,
+  );
   const { data: session } = authClient.useSession();
   const canContribute = canUserContribute(session?.user);
 
@@ -52,6 +63,28 @@ function App() {
 
     loadArtworks();
   }, []);
+
+  useEffect(() => {
+    let isCurrent = true;
+
+    void requestBrowserLocation().then((location) => {
+      if (isCurrent && location) {
+        setUserLocation(location);
+      }
+    });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, []);
+
+  const { sortedArtworks, artworkDistances } = useMemo(
+    () => rankArtworksByDistance(artworks, userLocation),
+    [artworks, userLocation],
+  );
+
+  const visibleArtworks = sortedArtworks.slice(0, visibleArtworkCount);
+  const hasMoreArtworks = visibleArtworkCount < sortedArtworks.length;
 
   return (
     <div className="app">
@@ -91,7 +124,9 @@ function App() {
 
         <section className="nearby-section" id="nearby">
           <div className="section-heading nearby-heading">
-            <span className="eyebrow">DISCOVER</span>
+            <span className="eyebrow">
+              {userLocation ? "CLOSEST TO YOU" : "DISCOVER"}
+            </span>
             <h3>Nearby artwork</h3>
           </div>
 
@@ -102,7 +137,7 @@ function App() {
           )}
 
           <div className="artwork-grid">
-            {artworks.map((artwork) => (
+            {visibleArtworks.map((artwork) => (
               <article className="artwork-card" key={artwork.id}>
                 <Link
                   to={`/artwork/${artwork.id}`}
@@ -131,7 +166,11 @@ function App() {
                         ● {artwork.status}
                       </span>
 
-                      <span className="distance">Artwork #{artwork.id}</span>
+                      {artworkDistances.has(artwork.id) && (
+                        <span className="distance">
+                          {formatDistance(artworkDistances.get(artwork.id)!)}
+                        </span>
+                      )}
                     </div>
 
                     <h4>{getArtworkDisplayTitle(artwork)}</h4>
@@ -158,6 +197,29 @@ function App() {
               </article>
             ))}
           </div>
+
+          {sortedArtworks.length > 0 && (
+            <div className="load-more-row">
+              <span className="load-more-progress">
+                Showing {Math.min(visibleArtworkCount, sortedArtworks.length)} of{" "}
+                {sortedArtworks.length}
+              </span>
+
+              {hasMoreArtworks && (
+                <button
+                  type="button"
+                  className="load-more-button"
+                  onClick={() =>
+                    setVisibleArtworkCount((count) =>
+                      Math.min(count + ARTWORK_PAGE_SIZE, sortedArtworks.length),
+                    )
+                  }
+                >
+                  Load more
+                </button>
+              )}
+            </div>
+          )}
         </section>
       </main>
 

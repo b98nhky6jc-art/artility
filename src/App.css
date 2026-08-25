@@ -657,6 +657,48 @@ main {
   cursor: pointer;
 }
 
+.load-more-row {
+  margin-top: 32px;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.load-more-progress {
+  color: var(--teal-strong);
+
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.load-more-button {
+  min-width: 170px;
+  min-height: 48px;
+  padding: 12px 20px;
+
+  border: 0;
+  border-radius: var(--radius-pill);
+
+  background: var(--action-bg);
+  color: var(--action-text);
+
+  font: inherit;
+  font-weight: 800;
+
+  cursor: pointer;
+}
+
+.load-more-button:hover {
+  background: var(--action-hover);
+}
+
+.load-more-button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
 .message {
   padding: 16px 0;
 }
