@@ -173,7 +173,6 @@ async function deliverArtworkStatusReportAlert(
     INNER JOIN "user" AS users
       ON users.id = reports.reporting_user_id
     WHERE reports.id = ?
-      AND reports.moderation_state = 'pending'
     LIMIT 1
   `)
     .bind(reportId)
@@ -205,7 +204,7 @@ async function deliverArtworkStatusReportAlert(
     .replace(/^./, (letter) => letter.toUpperCase());
   const artworkUrl = `https://artility.co.uk/artwork/${report.artwork_id}`;
   const lines = [
-    "A new artwork status report is waiting for review.",
+    "A new artwork status report was submitted.",
     "",
     `Artwork: ${artworkTitle}`,
     `Location: ${location}`,
