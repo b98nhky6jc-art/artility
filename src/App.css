@@ -1616,6 +1616,88 @@ main {
   font-weight: 700;
 }
 
+.artwork-submission-result {
+  width: 100%;
+  max-width: 980px;
+  margin-inline: auto;
+  text-align: center;
+}
+
+.artwork-submission-result h1 {
+  max-width: 880px;
+  margin-inline: auto;
+}
+
+.artwork-submission-message {
+  margin-top: 34px;
+  padding: clamp(28px, 4vw, 48px);
+  border-radius: var(--radius-medium);
+}
+
+.artwork-submission-review {
+  background: var(--soft-green);
+}
+
+.artwork-submission-rejected {
+  background: var(--warning-surface);
+}
+
+.artwork-submission-badge,
+.artwork-submission-reference {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.artwork-submission-badge {
+  padding: 8px 13px;
+  background: var(--mustard);
+  color: var(--ink-strong);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.artwork-submission-message h2 {
+  margin: 22px 0 12px;
+  font-size: clamp(26px, 3vw, 38px);
+  line-height: 1.1;
+}
+
+.artwork-submission-message p {
+  max-width: 720px;
+  margin: 0 auto 12px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.artwork-submission-reference {
+  margin-top: 14px;
+  padding: 7px 12px;
+  background: var(--paper);
+  color: var(--teal-strong);
+}
+
+.artwork-submission-actions {
+  margin-top: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.artwork-submission-actions a {
+  text-decoration: none;
+}
+
+.artwork-submission-actions .secondary-button {
+  border-color: var(--line);
+  color: var(--ink);
+}
+
 
 /* =========================================================
    PHOTO UPLOAD
@@ -2786,6 +2868,15 @@ main {
 
   .form-actions .secondary-button,
   .form-actions .checkin-button {
+    width: 100%;
+  }
+
+  .artwork-submission-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .artwork-submission-actions a {
     width: 100%;
   }
 

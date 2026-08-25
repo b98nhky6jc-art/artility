@@ -8,7 +8,12 @@ import { authClient } from "./lib/auth-client";
 import EmailVerificationNotice from "./EmailVerificationNotice";
 import { canUserContribute } from "./emailVerification";
 
-type Stage = "upload" | "review";
+type Stage = "upload" | "review" | "submitted";
+type UploadModerationNotice = "review" | "rejected";
+type SubmissionResult = {
+  artworkId: number;
+  moderation: UploadModerationNotice;
+};
 type NearbyArtwork = {
   id: number;
   title: string | null;
@@ -43,6 +48,10 @@ function getUploadModerationNotice(data: UploadResponse) {
   }
 
   return null;
+}
+
+function hasApprovedUpload(data: UploadResponse) {
+  return data.image_moderation?.some((item) => item.state === "approved") ?? false;
 }
 async function normaliseImage(file: File): Promise<File> {
   const MAX_DIMENSION = 2200;
@@ -302,6 +311,8 @@ export default function AddArtwork() {
   const [readingPhoto, setReadingPhoto] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [submissionResult, setSubmissionResult] =
+    useState<SubmissionResult | null>(null);
 
   async function checkNearbyArtworks(latitude: number, longitude: number) {
     setCheckingNearby(true);
@@ -513,8 +524,20 @@ export default function AddArtwork() {
         throw new Error("The artwork response was incomplete.");
       }
 
+      const moderationNotice = getUploadModerationNotice(artwork);
+
+      if (moderationNotice && !hasApprovedUpload(artwork)) {
+        setSubmissionResult({
+          artworkId: artwork.id,
+          moderation: moderationNotice,
+        });
+        setStage("submitted");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+
       navigate(`/artwork/${artwork.id}`, {
-        state: { uploadModeration: getUploadModerationNotice(artwork) },
+        state: { uploadModeration: moderationNotice },
       });
     } catch (error) {
       console.error(error);
@@ -950,6 +973,76 @@ export default function AddArtwork() {
                 </div>
               </form>
             </>
+          )}
+
+          {canContribute && stage === "submitted" && submissionResult && (
+            <div className="artwork-submission-result" role="status">
+              <span className="eyebrow">SUBMISSION RECEIVED</span>
+
+              <h1>
+                {submissionResult.moderation === "review"
+                  ? "Your artwork is awaiting review"
+                  : "This artwork wasn’t published"}
+              </h1>
+
+              <div
+                className={`artwork-submission-message artwork-submission-${submissionResult.moderation}`}
+              >
+                <span className="artwork-submission-badge">
+                  {submissionResult.moderation === "review"
+                    ? "Manual review"
+                    : "Image not approved"}
+                </span>
+
+                {submissionResult.moderation === "review" ? (
+                  <>
+                    <h2>Your submission is saved safely.</h2>
+                    <p>
+                      A moderator has been notified and will review the photo.
+                      Until it is approved, the artwork will not appear on
+                      Explore, Nearby artwork, Artists, search, or any public
+                      artwork page.
+                    </p>
+                    <p>
+                      You do not need to submit it again. If approved, it will
+                      be published automatically.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <h2>The uploaded image did not pass the safety check.</h2>
+                    <p>
+                      Neither the image nor this artwork is visible anywhere
+                      on Artility. You can try again with a different, clear
+                      photo or contact us if you think this was a mistake.
+                    </p>
+                  </>
+                )}
+
+                <span className="artwork-submission-reference">
+                  Submission #{submissionResult.artworkId}
+                </span>
+              </div>
+
+              <div className="artwork-submission-actions">
+                <Link to="/" className="primary-button">
+                  Continue exploring
+                </Link>
+                {submissionResult.moderation === "review" ? (
+                  <Link
+                    to="/add-artwork"
+                    className="secondary-button"
+                    reloadDocument
+                  >
+                    Add another artwork
+                  </Link>
+                ) : (
+                  <Link to="/contact" className="secondary-button">
+                    Contact Artility
+                  </Link>
+                )}
+              </div>
+            </div>
           )}
         </section>
       </main>

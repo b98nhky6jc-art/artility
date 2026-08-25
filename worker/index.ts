@@ -320,6 +320,167 @@ function isValidObservedDate(value: string) {
   );
 }
 
+export async function purgeExpiredRejectedArtworks(env: Env) {
+  const candidates = await env.DB.prepare(`
+    SELECT artworks.id
+    FROM artworks
+    WHERE EXISTS (
+      SELECT 1
+      FROM photos
+      WHERE photos.artwork_id = artworks.id
+        AND photos.moderation_state = 'rejected'
+    )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM photos
+        WHERE photos.artwork_id = artworks.id
+          AND (
+            photos.moderation_state <> 'rejected'
+            OR COALESCE(photos.reviewed_at, photos.created_at) > datetime('now', '-24 hours')
+          )
+      )
+    ORDER BY artworks.id ASC
+    LIMIT 50
+  `).all<{ id: number }>();
+
+  let purged = 0;
+
+  for (const candidate of candidates.results) {
+    try {
+      const assets = await env.DB.prepare(`
+        SELECT storage_key, thumbnail_key
+        FROM photos
+        WHERE artwork_id = ?
+          AND moderation_state = 'rejected'
+          AND COALESCE(reviewed_at, created_at) <= datetime('now', '-24 hours')
+        UNION ALL
+        SELECT photo_storage_key AS storage_key, NULL AS thumbnail_key
+        FROM artwork_status_reports
+        WHERE artwork_id = ?
+          AND photo_storage_key IS NOT NULL
+      `)
+        .bind(candidate.id, candidate.id)
+        .all<{ storage_key: string; thumbnail_key: string | null }>();
+      const keys = [
+        ...new Set(
+          assets.results.flatMap((asset) =>
+            [asset.storage_key, asset.thumbnail_key].filter(
+              (key): key is string => Boolean(key),
+            ),
+          ),
+        ),
+      ];
+
+      if (keys.length > 0) {
+        await env.IMAGES.delete(keys);
+      }
+
+      const eligibleArtwork = `
+        artwork_id = ?
+        AND EXISTS (
+          SELECT 1
+          FROM photos AS rejected_photo
+          WHERE rejected_photo.artwork_id = ?
+            AND rejected_photo.moderation_state = 'rejected'
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM photos AS retained_photo
+          WHERE retained_photo.artwork_id = ?
+            AND (
+              retained_photo.moderation_state <> 'rejected'
+              OR COALESCE(retained_photo.reviewed_at, retained_photo.created_at) > datetime('now', '-24 hours')
+            )
+        )
+      `;
+      const eligibilityBindings = [
+        candidate.id,
+        candidate.id,
+        candidate.id,
+      ];
+      const results = await env.DB.batch([
+        env.DB.prepare(`
+          DELETE FROM image_moderation_alert_outbox
+          WHERE photo_id IN (
+            SELECT id
+            FROM photos
+            WHERE artwork_id = ?
+              AND moderation_state = 'rejected'
+              AND COALESCE(reviewed_at, created_at) <= datetime('now', '-24 hours')
+          )
+        `).bind(candidate.id),
+        env.DB.prepare(`
+          DELETE FROM email_notification_outbox
+          WHERE event_type = 'artwork_status_report'
+            AND entity_id IN (
+              SELECT CAST(id AS TEXT)
+              FROM artwork_status_reports
+              WHERE ${eligibleArtwork}
+            )
+        `).bind(...eligibilityBindings),
+        env.DB.prepare(`
+          DELETE FROM checkins
+          WHERE ${eligibleArtwork}
+        `).bind(...eligibilityBindings),
+        env.DB.prepare(`
+          DELETE FROM artwork_revisions
+          WHERE ${eligibleArtwork}
+        `).bind(...eligibilityBindings),
+        env.DB.prepare(`
+          DELETE FROM artwork_status_reports
+          WHERE ${eligibleArtwork}
+        `).bind(...eligibilityBindings),
+        env.DB.prepare(`
+          UPDATE artwork_status_reports
+          SET replacement_artwork_id = NULL
+          WHERE replacement_artwork_id = ?
+            AND EXISTS (
+              SELECT 1
+              FROM photos AS rejected_photo
+              WHERE rejected_photo.artwork_id = ?
+                AND rejected_photo.moderation_state = 'rejected'
+            )
+            AND NOT EXISTS (
+              SELECT 1
+              FROM photos AS retained_photo
+              WHERE retained_photo.artwork_id = ?
+                AND (
+                  retained_photo.moderation_state <> 'rejected'
+                  OR COALESCE(retained_photo.reviewed_at, retained_photo.created_at) > datetime('now', '-24 hours')
+                )
+            )
+        `).bind(candidate.id, candidate.id, candidate.id),
+        env.DB.prepare(`
+          DELETE FROM photos
+          WHERE artwork_id = ?
+            AND moderation_state = 'rejected'
+            AND COALESCE(reviewed_at, created_at) <= datetime('now', '-24 hours')
+        `).bind(candidate.id),
+        env.DB.prepare(`
+          DELETE FROM artworks
+          WHERE id = ?
+            AND NOT EXISTS (
+              SELECT 1
+              FROM photos
+              WHERE photos.artwork_id = artworks.id
+            )
+        `).bind(candidate.id),
+      ]);
+
+      if (Number(results.at(-1)?.meta.changes ?? 0) === 1) {
+        purged += 1;
+      }
+    } catch (error) {
+      console.error(
+        `Rejected artwork cleanup failed for artwork ${candidate.id}:`,
+        error,
+      );
+    }
+  }
+
+  return { candidates: candidates.results.length, purged };
+}
+
 function createVerificationLandingResponse(
   authResponse: Response,
   requestUrl: URL,
@@ -2701,5 +2862,19 @@ artists.name AS artist_name,
     return new Response("Not found", {
       status: 404,
     });
+  },
+
+  scheduled(
+    _controller: ScheduledController,
+    env: Env,
+    ctx: ExecutionContext,
+  ) {
+    ctx.waitUntil(
+      purgeExpiredRejectedArtworks(env).then((result) => {
+        console.log(
+          `Rejected artwork cleanup checked ${result.candidates} and purged ${result.purged}.`,
+        );
+      }),
+    );
   },
 } satisfies ExportedHandler<Env>;
