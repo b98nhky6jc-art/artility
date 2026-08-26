@@ -24,11 +24,20 @@ type Artwork = {
   artist_id: number | null;
 };
 
+type HomeArea = {
+  town: string;
+  city: string;
+  latitude: number;
+  longitude: number;
+};
+
 function App() {
   const [artworks, setArtworks] = useState<Artwork[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [homeArea, setHomeArea] = useState<HomeArea | null>(null);
   const { data: session } = authClient.useSession();
+  const sessionUserId = session?.user?.id;
 
   useEffect(() => {
     async function loadArtworks() {
@@ -50,6 +59,22 @@ function App() {
 
     loadArtworks();
   }, []);
+
+  useEffect(() => {
+    if (!sessionUserId) return;
+
+    async function loadHomeArea() {
+      const response = await fetch("/api/profile/home-area");
+
+      if (response.ok) {
+        setHomeArea((await response.json()) as HomeArea | null);
+      }
+    }
+
+    void loadHomeArea();
+  }, [sessionUserId]);
+
+  const homeLabel = homeArea?.town || homeArea?.city || "Leeds";
 
   return (
     <div className="app">
@@ -103,7 +128,7 @@ function App() {
       <main>
         <section className="hero" id="map">
           <div className="hero-copy">
-            <span className="location-pill">📍 Leeds</span>
+            <span className="location-pill">📍 {homeLabel}</span>
 
             <h2>
               Find the art
@@ -124,7 +149,11 @@ function App() {
           </div>
 
           <div className="map-wrapper" id="home-map">
-            <ArtworkMap artworks={artworks} />
+            <ArtworkMap
+              artworks={artworks}
+              homeArea={homeArea}
+              preserveHomeCenter
+            />
           </div>
         </section>
 

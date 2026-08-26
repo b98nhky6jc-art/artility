@@ -61,6 +61,7 @@
 .detail-photo-count { color: var(--teal-strong); font-size: 0.85rem; font-weight: 800; }
 .add-photos-form { margin: 1rem 0; }
 .add-photos-form label { display: grid; gap: 0.45rem; font-weight: 800; }
+.edit-cancel-button { display: block; margin: 0.8rem auto 0; }
 
 
 /* =========================================================
@@ -301,6 +302,7 @@ main {
 
   font-weight: 750;
   cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease, background-color 150ms ease, border-color 150ms ease;
 }
 
 .primary-button {
@@ -308,6 +310,7 @@ main {
 
   background: var(--yellow);
   color: var(--ink);
+  box-shadow: 0 4px 0 rgba(48, 35, 28, 0.22);
 }
 
 .secondary-button {
@@ -315,6 +318,31 @@ main {
   color: #ffffff;
 
   border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 3px 0 rgba(48, 35, 28, 0.2);
+}
+
+.primary-button:hover,
+.secondary-button:hover {
+  transform: translateY(-2px);
+}
+
+.primary-button:active,
+.secondary-button:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 rgba(48, 35, 28, 0.22);
+}
+
+.primary-button:focus-visible,
+.secondary-button:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .primary-button,
+  .secondary-button {
+    transition: none;
+  }
 }
 
 
@@ -1177,6 +1205,67 @@ main {
   padding-bottom: 60px;
 }
 
+.home-area-section {
+  margin: 0 0 32px;
+  padding: 30px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.9fr);
+  gap: 32px;
+  background: #ffffff;
+  border: 1px solid rgba(117, 71, 53, 0.16);
+  border-radius: var(--radius-medium);
+}
+
+.home-area-section h2 {
+  margin: 6px 0 10px;
+  color: var(--ink);
+}
+
+.home-area-section p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.home-area-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-content: start;
+}
+
+.home-area-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.home-area-form input {
+  min-width: 0;
+}
+
+.home-area-actions,
+.home-area-message {
+  grid-column: 1 / -1;
+}
+
+.home-area-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.home-area-actions .primary-button,
+.home-area-actions .secondary-button {
+  border: 0;
+  cursor: pointer;
+}
+
+.home-area-message {
+  font-size: 14px;
+}
+
 .empty-collection {
   padding: 34px;
 
@@ -1869,6 +1958,10 @@ main {
    ========================================================= */
 
 @media (max-width: 820px) {
+  .home-area-section {
+    grid-template-columns: 1fr;
+  }
+
   main {
     padding: 0 16px 82px;
   }

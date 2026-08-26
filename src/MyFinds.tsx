@@ -20,10 +20,26 @@ type Find = {
   artist_id: number | null;
 };
 
+type HomeArea = {
+  town: string;
+  city: string;
+  latitude: number;
+  longitude: number;
+};
+
 export default function MyFinds() {
   const [finds, setFinds] = useState<Find[]>([]);
   const [loading, setLoading] = useState(true);
+  const [homeArea, setHomeArea] = useState<HomeArea | null>(null);
+  const [homeTown, setHomeTown] = useState("");
+  const [homeCity, setHomeCity] = useState("");
+  const [homeCoordinates, setHomeCoordinates] = useState<
+    Pick<HomeArea, "latitude" | "longitude"> | null
+  >(null);
+  const [homeAreaMessage, setHomeAreaMessage] = useState("");
+  const [savingHomeArea, setSavingHomeArea] = useState(false);
   const { data: session } = authClient.useSession();
+  const sessionUserId = session?.user?.id;
 
   useEffect(() => {
     async function loadFinds() {
@@ -43,6 +59,81 @@ export default function MyFinds() {
 
     loadFinds();
   }, []);
+
+  useEffect(() => {
+    if (!sessionUserId) return;
+
+    async function loadHomeArea() {
+      const response = await fetch("/api/profile/home-area");
+      if (!response.ok) return;
+
+      const savedHomeArea = (await response.json()) as HomeArea | null;
+      if (!savedHomeArea) return;
+
+      setHomeArea(savedHomeArea);
+      setHomeTown(savedHomeArea.town);
+      setHomeCity(savedHomeArea.city);
+      setHomeCoordinates(savedHomeArea);
+    }
+
+    void loadHomeArea();
+  }, [sessionUserId]);
+
+  function chooseCurrentLocation() {
+    setHomeAreaMessage("");
+
+    if (!navigator.geolocation) {
+      setHomeAreaMessage("Your browser cannot choose a map location.");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setHomeCoordinates({
+          latitude: Math.round(position.coords.latitude * 100) / 100,
+          longitude: Math.round(position.coords.longitude * 100) / 100,
+        });
+        setHomeAreaMessage("Approximate map location chosen. Now save your home area.");
+      },
+      () => setHomeAreaMessage("We could not access your location. Check browser permissions and try again."),
+      { enableHighAccuracy: false, timeout: 10000 },
+    );
+  }
+
+  async function saveHomeArea(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setHomeAreaMessage("");
+
+    if (!homeCoordinates) {
+      setHomeAreaMessage("Choose an approximate map location before saving.");
+      return;
+    }
+
+    setSavingHomeArea(true);
+    try {
+      const response = await fetch("/api/profile/home-area", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          town: homeTown,
+          city: homeCity,
+          ...homeCoordinates,
+        }),
+      });
+      const data = (await response.json()) as HomeArea | { error?: string };
+
+      if (!response.ok || !("town" in data)) {
+        throw new Error("error" in data ? data.error : "Could not save your home area.");
+      }
+
+      setHomeArea(data);
+      setHomeAreaMessage("Home area saved. Explore will now start here.");
+    } catch (error) {
+      setHomeAreaMessage(error instanceof Error ? error.message : "Could not save your home area.");
+    } finally {
+      setSavingHomeArea(false);
+    }
+  }
 
   const cityCount = useMemo(() => {
     return new Set(
@@ -121,6 +212,38 @@ export default function MyFinds() {
             </div>
           </div>
         </section>
+
+        {session?.user && (
+          <section className="home-area-section">
+            <div>
+              <span className="eyebrow">HOME AREA</span>
+              <h2>Where should Explore start?</h2>
+              <p>
+                Save your town or city and an approximate map point. This is private and only sets your own starting view.
+              </p>
+            </div>
+
+            <form className="home-area-form" onSubmit={saveHomeArea}>
+              <label>
+                Town
+                <input value={homeTown} onChange={(event) => setHomeTown(event.target.value)} required />
+              </label>
+              <label>
+                City
+                <input value={homeCity} onChange={(event) => setHomeCity(event.target.value)} required />
+              </label>
+              <div className="home-area-actions">
+                <button type="button" className="secondary-button" onClick={chooseCurrentLocation}>
+                  {homeCoordinates ? "Update map point" : "Use my current location"}
+                </button>
+                <button type="submit" className="primary-button" disabled={savingHomeArea}>
+                  {savingHomeArea ? "Saving…" : homeArea ? "Save changes" : "Save home area"}
+                </button>
+              </div>
+              {homeAreaMessage && <p className="home-area-message">{homeAreaMessage}</p>}
+            </form>
+          </section>
+        )}
 
         <section className="collection-section">
           <div className="section-heading">

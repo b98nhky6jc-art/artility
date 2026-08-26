@@ -27,6 +27,83 @@ export default {
       return auth.handler(request);
     }
 
+    if (url.pathname === "/api/profile/home-area" && request.method === "GET") {
+      const userId = await getCurrentUserId();
+
+      if (!userId) {
+        return Response.json({ error: "Not signed in" }, { status: 401 });
+      }
+
+      const homeArea = await env.DB.prepare(`
+        SELECT town, city, latitude, longitude
+        FROM user_home_areas
+        WHERE user_id = ?
+        LIMIT 1
+      `)
+        .bind(userId)
+        .first();
+
+      return Response.json(homeArea ?? null);
+    }
+
+    if (url.pathname === "/api/profile/home-area" && request.method === "PUT") {
+      const userId = await getCurrentUserId();
+
+      if (!userId) {
+        return Response.json({ error: "Not signed in" }, { status: 401 });
+      }
+
+      try {
+        const body = (await request.json()) as Record<string, unknown>;
+        const town = String(body.town ?? "").trim();
+        const city = String(body.city ?? "").trim();
+        const latitude = Number(body.latitude);
+        const longitude = Number(body.longitude);
+
+        if (!town || !city || town.length > 120 || city.length > 120) {
+          return Response.json(
+            { error: "Enter a town and city." },
+            { status: 400 },
+          );
+        }
+
+        if (
+          !Number.isFinite(latitude) ||
+          !Number.isFinite(longitude) ||
+          latitude < -90 ||
+          latitude > 90 ||
+          longitude < -180 ||
+          longitude > 180
+        ) {
+          return Response.json(
+            { error: "Choose a valid map location." },
+            { status: 400 },
+          );
+        }
+
+        await env.DB.prepare(`
+          INSERT INTO user_home_areas (user_id, town, city, latitude, longitude)
+          VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(user_id) DO UPDATE SET
+            town = excluded.town,
+            city = excluded.city,
+            latitude = excluded.latitude,
+            longitude = excluded.longitude,
+            updated_at = CURRENT_TIMESTAMP
+        `)
+          .bind(userId, town, city, latitude, longitude)
+          .run();
+
+        return Response.json({ town, city, latitude, longitude });
+      } catch (error) {
+        console.error("Home area update failed:", error);
+        return Response.json(
+          { error: "Could not save your home area." },
+          { status: 500 },
+        );
+      }
+    }
+
     if (url.pathname === "/api/artworks" && request.method === "POST") {
       try {
 

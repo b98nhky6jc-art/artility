@@ -13,9 +13,18 @@ type Artwork = {
 
 type Props = {
   artworks: Artwork[];
+  homeArea?: {
+    latitude: number;
+    longitude: number;
+  } | null;
+  preserveHomeCenter?: boolean;
 };
 
-export default function ArtworkMap({ artworks }: Props) {
+export default function ArtworkMap({
+  artworks,
+  homeArea,
+  preserveHomeCenter = false,
+}: Props) {
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<maplibregl.Marker[]>([]);
@@ -55,6 +64,19 @@ export default function ArtworkMap({ artworks }: Props) {
       mapRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+
+    if (!map || !homeArea) {
+      return;
+    }
+
+    map.jumpTo({
+      center: [homeArea.longitude, homeArea.latitude],
+      zoom: 12,
+    });
+  }, [homeArea]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -105,7 +127,7 @@ export default function ArtworkMap({ artworks }: Props) {
       markersRef.current.push(marker);
     });
 
-    if (!bounds.isEmpty()) {
+    if (!bounds.isEmpty() && !preserveHomeCenter) {
       if (artworks.length === 1) {
         const artwork = artworks[0];
 
@@ -121,7 +143,7 @@ export default function ArtworkMap({ artworks }: Props) {
         });
       }
     }
-  }, [artworks]);
+  }, [artworks, preserveHomeCenter]);
 
   return <div ref={mapContainer} className="real-map" />;
 }
