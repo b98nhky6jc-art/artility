@@ -24,9 +24,37 @@ type Find = {
   artist_id: number | null;
 };
 
+type AdminProfileStats = {
+  registered_user_count: number;
+  latest_user_registered_at: string | null;
+  latest_artwork_added_at: string | null;
+};
+
+function formatAdminTimestamp(value: string | null) {
+  if (!value) {
+    return "—";
+  }
+
+  const timestamp = new Date(value);
+
+  if (Number.isNaN(timestamp.getTime())) {
+    return "—";
+  }
+
+  return timestamp.toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export default function MyFinds() {
   const [finds, setFinds] = useState<Find[]>([]);
   const [loading, setLoading] = useState(true);
+  const [adminStats, setAdminStats] = useState<AdminProfileStats | null>(null);
+  const [adminStatsError, setAdminStatsError] = useState("");
   const { data: session } = authClient.useSession();
   const { isAdmin } = useAdminAccess(session?.user.id);
   const canContribute = canUserContribute(session?.user);
@@ -49,6 +77,37 @@ export default function MyFinds() {
 
     loadFinds();
   }, []);
+
+  useEffect(() => {
+    let isCurrent = true;
+
+    if (!isAdmin) {
+      return;
+    }
+
+    void fetch("/api/admin/profile-stats", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`API returned ${response.status}`);
+        }
+
+        return response.json() as Promise<AdminProfileStats>;
+      })
+      .then((stats) => {
+        if (isCurrent) {
+          setAdminStats(stats);
+        }
+      })
+      .catch(() => {
+        if (isCurrent) {
+          setAdminStatsError("Could not load site statistics.");
+        }
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [isAdmin]);
 
   const cityCount = useMemo(() => {
     return new Set(
@@ -138,6 +197,51 @@ export default function MyFinds() {
             </div>
           )}
         </section>
+
+        {isAdmin && (
+          <section className="page-panel admin-profile-overview">
+            <div className="admin-profile-overview-heading">
+              <div>
+                <span className="eyebrow">ADMIN OVERVIEW</span>
+                <h2>Site activity</h2>
+              </div>
+              <Link to="/admin/moderation" className="profile-review-link">
+                Open review queue
+              </Link>
+            </div>
+
+            {adminStatsError && (
+              <p className="form-error" role="alert">
+                {adminStatsError}
+              </p>
+            )}
+
+            {!adminStats && !adminStatsError && (
+              <p className="message">Loading site activity…</p>
+            )}
+
+            {adminStats && (
+              <div className="admin-profile-stats">
+                <div className="admin-profile-stat">
+                  <span>Registered users</span>
+                  <strong>{adminStats.registered_user_count}</strong>
+                </div>
+                <div className="admin-profile-stat">
+                  <span>Most recent registration</span>
+                  <strong>
+                    {formatAdminTimestamp(adminStats.latest_user_registered_at)}
+                  </strong>
+                </div>
+                <div className="admin-profile-stat">
+                  <span>Most recent artwork</span>
+                  <strong>
+                    {formatAdminTimestamp(adminStats.latest_artwork_added_at)}
+                  </strong>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
 
         <section className="collection-section">
           <div className="section-heading">

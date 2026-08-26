@@ -1220,6 +1220,46 @@ export default {
       });
     }
 
+    if (
+      url.pathname === "/api/admin/profile-stats" &&
+      request.method === "GET"
+    ) {
+      const access = await requireAdmin();
+
+      if (!access.ok) {
+        return access.response;
+      }
+
+      const [userSummary, artworkSummary] = await Promise.all([
+        env.DB.prepare(`
+          SELECT
+            COUNT(*) AS registered_user_count,
+            MAX(createdAt) AS latest_user_registered_at
+          FROM "user"
+        `).first<{
+          registered_user_count: number;
+          latest_user_registered_at: string | null;
+        }>(),
+        env.DB.prepare(`
+          SELECT MAX(created_at) AS latest_artwork_added_at
+          FROM artworks
+        `).first<{ latest_artwork_added_at: string | null }>(),
+      ]);
+
+      return Response.json(
+        {
+          registered_user_count: Number(
+            userSummary?.registered_user_count ?? 0,
+          ),
+          latest_user_registered_at:
+            userSummary?.latest_user_registered_at ?? null,
+          latest_artwork_added_at:
+            artworkSummary?.latest_artwork_added_at ?? null,
+        },
+        { headers: { "cache-control": "no-store" } },
+      );
+    }
+
     const adminArtworkMatch = url.pathname.match(
       /^\/api\/admin\/artworks\/(\d+)$/,
     );

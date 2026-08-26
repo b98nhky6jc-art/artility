@@ -1645,6 +1645,59 @@ main {
   font-size: 12px;
 }
 
+.admin-profile-overview {
+  margin-bottom: var(--section-gap);
+}
+
+.admin-profile-overview-heading {
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.admin-profile-overview-heading h2 {
+  margin: 5px 0 0;
+  font-size: clamp(34px, 4vw, 52px);
+  line-height: 1;
+  letter-spacing: -2px;
+}
+
+.admin-profile-stats {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.7fr) repeat(2, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.admin-profile-stat {
+  min-width: 0;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: var(--radius-medium);
+  background: var(--surface-muted);
+}
+
+.admin-profile-stat:first-child {
+  background: var(--mustard);
+}
+
+.admin-profile-stat span {
+  color: var(--teal-strong);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.admin-profile-stat strong {
+  color: var(--ink);
+  font-size: clamp(20px, 2vw, 28px);
+  line-height: 1.2;
+}
+
 .collection-section {
   padding-bottom: var(--section-gap);
 }
@@ -3482,6 +3535,19 @@ main {
     min-width: 0;
 
     padding: 14px 10px;
+  }
+
+  .admin-profile-overview-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .admin-profile-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-profile-stat {
+    padding: 18px;
   }
 
   /* Add artwork */
