@@ -1,6 +1,6 @@
 import { createAuth } from "./auth.js";
 
-const MAX_PHOTOS_PER_ARTWORK = 3;
+const MAX_PHOTOS_PER_ARTWORK = 5;
 
 const MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set([
@@ -633,6 +633,12 @@ artworks.created_at,
 artworks.created_at,
 
 (
+  SELECT COUNT(*)
+  FROM photos AS artwork_photo
+  WHERE artwork_photo.artwork_id = artworks.id
+) AS photo_count,
+
+(
   SELECT COUNT(DISTINCT checkins.user_id)
   FROM checkins
   WHERE checkins.artwork_id = artworks.id
@@ -680,6 +686,12 @@ if (artworkDetailMatch && request.method === "GET") {
       artworks.status,
       artworks.artist_id,
       artworks.created_at,
+
+      (
+        SELECT COUNT(*)
+        FROM photos AS artwork_photo
+        WHERE artwork_photo.artwork_id = artworks.id
+      ) AS photo_count,
 
       (
         SELECT COUNT(DISTINCT checkins.user_id)

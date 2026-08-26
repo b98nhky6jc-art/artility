@@ -44,6 +44,24 @@
   --page-width: 1180px;
 }
 
+.community-safety-notice {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--soft-line);
+  border-radius: var(--radius-medium);
+  background: var(--cream);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.community-safety-notice p,
+.community-safety-notice ul { margin: 0.45rem 0 0; }
+.community-safety-notice ul { padding-left: 1.2rem; }
+.photo-count,
+.detail-photo-count { color: var(--teal-strong); font-size: 0.85rem; font-weight: 800; }
+.add-photos-form { margin: 1rem 0; }
+.add-photos-form label { display: grid; gap: 0.45rem; font-weight: 800; }
+
 
 /* =========================================================
    BASE

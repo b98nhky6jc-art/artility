@@ -5,6 +5,7 @@ import "./App.css";
 import { getArtworkDisplayTitle } from "./artworkDisplay";
 import ArtistAttribution from "./ArtistAttribution";
 import { authClient } from "./lib/auth-client";
+import CommunitySafetyNotice from "./CommunitySafetyNotice";
 
 
 type Artwork = {
@@ -24,6 +25,7 @@ type Artwork = {
   instagram_handle: string | null;
   primary_photo: string | null;
   photo_added_at: string | null;
+  photo_count: number;
 };
 type ArtworkPhoto = {
   id: number;
@@ -38,6 +40,7 @@ type ArtworkDetailResponse = {
 };
 
 const CHECKIN_RADIUS_METRES = 100;
+const MAX_PHOTOS_PER_ARTWORK = 5;
 
 function formatArtworkDate(value: string) {
   const dateValue = value.includes("T") ? value : value.replace(" ", "T") + "Z";
@@ -78,6 +81,9 @@ export default function ArtworkDetail() {
   const { id } = useParams();
   const [photos, setPhotos] = useState<ArtworkPhoto[]>([]);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+  const [newPhotos, setNewPhotos] = useState<File[]>([]);
+  const [addingPhotos, setAddingPhotos] = useState(false);
+  const [photoError, setPhotoError] = useState("");
 
 
   const [artwork, setArtwork] = useState<Artwork | null>(null);
@@ -92,6 +98,27 @@ export default function ArtworkDetail() {
 
   const [locationError, setLocationError] = useState("");
   const { data: session } = authClient.useSession();
+  const remainingPhotoSlots = Math.max(0, MAX_PHOTOS_PER_ARTWORK - (artwork?.photo_count ?? 0));
+
+  async function addPhotos(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!artwork || newPhotos.length === 0) return;
+    setAddingPhotos(true);
+    setPhotoError("");
+    try {
+      const formData = new FormData();
+      newPhotos.forEach((photo) => formData.append("photos", photo));
+      const response = await fetch(`/api/artworks/${artwork.id}/photos`, { method: "POST", body: formData });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.error ?? "Could not add photos.");
+      }
+      window.location.reload();
+    } catch (error) {
+      setPhotoError(error instanceof Error ? error.message : "Could not add photos.");
+      setAddingPhotos(false);
+    }
+  }
 
   const [editing, setEditing] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -412,6 +439,36 @@ export default function ArtworkDetail() {
               {artwork.infrastructure_type}
               {artwork.city ? ` · ${artwork.city}` : ""}
             </p>
+
+            <p className="detail-photo-count">
+              {artwork.photo_count} of {MAX_PHOTOS_PER_ARTWORK} photos
+              {remainingPhotoSlots > 0
+                ? ` · ${remainingPhotoSlots} ${remainingPhotoSlots === 1 ? "space" : "spaces"} left`
+                : " · Photo limit reached"}
+            </p>
+
+            {session?.user && remainingPhotoSlots > 0 && (
+              <form className="add-photos-form" onSubmit={addPhotos}>
+                <CommunitySafetyNotice context="upload" />
+                <label>
+                  Add up to {remainingPhotoSlots} more {remainingPhotoSlots === 1 ? "photo" : "photos"}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    multiple
+                    disabled={addingPhotos}
+                    onChange={(event) => {
+                      setNewPhotos(Array.from(event.target.files ?? []));
+                      setPhotoError("");
+                    }}
+                  />
+                </label>
+                {photoError && <p className="form-error" role="alert">{photoError}</p>}
+                <button type="submit" className="checkin-button" disabled={addingPhotos || newPhotos.length === 0 || newPhotos.length > remainingPhotoSlots}>
+                  {addingPhotos ? "Adding photos…" : "Add photos"}
+                </button>
+              </form>
+            )}
             {session?.user && !editing && (
               <button
                 type="button"

@@ -20,6 +20,7 @@ type Artwork = {
   artist_name: string | null;
   instagram_handle: string | null;
   primary_photo: string | null;
+  photo_count: number;
   artist_id: number | null;
 };
 
@@ -185,6 +186,8 @@ function App() {
                       {artwork.infrastructure_type}
                       {artwork.city ? ` · ${artwork.city}` : ""}
                     </p>
+
+                    <p className="photo-count">{artwork.photo_count} of 5 photos</p>
 
                     {artwork.description && (
                       <p className="description">{artwork.description}</p>

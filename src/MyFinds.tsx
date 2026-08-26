@@ -4,6 +4,7 @@ import "./App.css";
 import { authClient } from "./lib/auth-client";
 import { getArtworkDisplayTitle } from "./artworkDisplay";
 import ArtistAttribution from "./ArtistAttribution";
+import CommunitySafetyNotice from "./CommunitySafetyNotice";
 
 type Find = {
   instagram_handle: string | null;
@@ -90,6 +91,7 @@ export default function MyFinds() {
                 </button>
               </div>
             )}
+            {session?.user && <CommunitySafetyNotice context="profile" />}
           </div>
 
           <div className="profile-stats">

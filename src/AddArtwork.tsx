@@ -5,6 +5,7 @@ import "./App.css";
 import LibRaw from "libraw-wasm";
 import { getArtworkDisplayTitle } from "./artworkDisplay";
 import { authClient } from "./lib/auth-client";
+import CommunitySafetyNotice from "./CommunitySafetyNotice";
 
 type Stage = "upload" | "review";
 type NearbyArtwork = {
@@ -513,6 +514,8 @@ export default function AddArtwork() {
                 Upload up to 5 photos and we’ll pull out whatever useful information we can.
 
               </p>
+
+              <CommunitySafetyNotice context="upload" />
 
               <label
                 className="photo-upload"

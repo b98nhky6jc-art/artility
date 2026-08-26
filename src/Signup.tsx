@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { authClient } from "./lib/auth-client";
+import CommunitySafetyNotice from "./CommunitySafetyNotice";
 import "./App.css";
 
 export default function Signup() {
@@ -95,6 +96,7 @@ export default function Signup() {
           <h1>Create account</h1>
 
           <p>Keep track of your finds and contribute artwork.</p>
+          <CommunitySafetyNotice context="profile" />
 
           <button
             type="button"
