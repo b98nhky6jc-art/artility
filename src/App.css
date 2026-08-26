@@ -1680,8 +1680,32 @@ main {
   background: var(--surface-muted);
 }
 
-.admin-profile-stat:first-child {
+.admin-profile-stats > :first-child {
   background: var(--mustard);
+}
+
+.admin-profile-users-toggle {
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.admin-profile-users-toggle:hover {
+  background: var(--mustard-strong);
+}
+
+.admin-profile-users-toggle:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.admin-profile-users-toggle small {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: underline;
 }
 
 .admin-profile-stat span {
@@ -1696,6 +1720,60 @@ main {
   color: var(--ink);
   font-size: clamp(20px, 2vw, 28px);
   line-height: 1.2;
+}
+
+.admin-user-directory {
+  margin-top: 22px;
+  padding-top: 22px;
+  border-top: 1px solid var(--soft-line);
+}
+
+.admin-user-directory-heading {
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-user-directory-heading > strong {
+  color: var(--ink);
+}
+
+.admin-user-table-wrap {
+  overflow-x: auto;
+  border-radius: var(--radius-medium);
+}
+
+.admin-user-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface-muted);
+  color: var(--ink);
+  text-align: left;
+}
+
+.admin-user-table th,
+.admin-user-table td {
+  padding: 15px 17px;
+  border-bottom: 1px solid var(--soft-line);
+  vertical-align: top;
+}
+
+.admin-user-table th {
+  color: var(--teal-strong);
+  font-size: 11px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.admin-user-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.admin-user-table a {
+  color: var(--accent-link);
+  font-weight: 700;
 }
 
 .collection-section {
@@ -3548,6 +3626,54 @@ main {
 
   .admin-profile-stat {
     padding: 18px;
+  }
+
+  .admin-user-directory-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .admin-user-table,
+  .admin-user-table tbody,
+  .admin-user-table tr,
+  .admin-user-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .admin-user-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .admin-user-table tr {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--soft-line);
+  }
+
+  .admin-user-table tr:last-child {
+    border-bottom: 0;
+  }
+
+  .admin-user-table td {
+    padding: 7px 16px;
+    border: 0;
+  }
+
+  .admin-user-table td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 2px;
+    color: var(--teal-strong);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.7px;
+    text-transform: uppercase;
   }
 
   /* Add artwork */

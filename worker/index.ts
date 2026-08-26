@@ -1260,6 +1260,48 @@ export default {
       );
     }
 
+    if (url.pathname === "/api/admin/users" && request.method === "GET") {
+      const access = await requireAdmin();
+
+      if (!access.ok) {
+        return access.response;
+      }
+
+      const result = await env.DB.prepare(`
+        SELECT
+          users.id,
+          users.name,
+          users.email,
+          users.createdAt AS registered_at,
+          COUNT(artworks.id) AS artwork_count
+        FROM "user" AS users
+        LEFT JOIN artworks
+          ON artworks.added_by = users.id
+        GROUP BY
+          users.id,
+          users.name,
+          users.email,
+          users.createdAt
+        ORDER BY users.createdAt DESC, users.id DESC
+      `).all<{
+        id: string;
+        name: string;
+        email: string;
+        registered_at: string;
+        artwork_count: number;
+      }>();
+
+      return Response.json(
+        {
+          users: result.results.map((user) => ({
+            ...user,
+            artwork_count: Number(user.artwork_count ?? 0),
+          })),
+        },
+        { headers: { "cache-control": "no-store" } },
+      );
+    }
+
     const adminArtworkMatch = url.pathname.match(
       /^\/api\/admin\/artworks\/(\d+)$/,
     );

@@ -30,6 +30,14 @@ type AdminProfileStats = {
   latest_artwork_added_at: string | null;
 };
 
+type AdminUser = {
+  id: string;
+  name: string;
+  email: string;
+  registered_at: string;
+  artwork_count: number;
+};
+
 function formatAdminTimestamp(value: string | null) {
   if (!value) {
     return "—";
@@ -55,6 +63,10 @@ export default function MyFinds() {
   const [loading, setLoading] = useState(true);
   const [adminStats, setAdminStats] = useState<AdminProfileStats | null>(null);
   const [adminStatsError, setAdminStatsError] = useState("");
+  const [showAdminUsers, setShowAdminUsers] = useState(false);
+  const [adminUsers, setAdminUsers] = useState<AdminUser[] | null>(null);
+  const [adminUsersLoading, setAdminUsersLoading] = useState(false);
+  const [adminUsersError, setAdminUsersError] = useState("");
   const { data: session } = authClient.useSession();
   const { isAdmin } = useAdminAccess(session?.user.id);
   const canContribute = canUserContribute(session?.user);
@@ -118,6 +130,33 @@ export default function MyFinds() {
   }, [finds]);
 
   const latestFind = finds[0];
+
+  async function toggleAdminUsers() {
+    const shouldShow = !showAdminUsers;
+    setShowAdminUsers(shouldShow);
+
+    if (!shouldShow || adminUsers || adminUsersLoading) {
+      return;
+    }
+
+    setAdminUsersLoading(true);
+    setAdminUsersError("");
+
+    try {
+      const response = await fetch("/api/admin/users", { cache: "no-store" });
+
+      if (!response.ok) {
+        throw new Error(`API returned ${response.status}`);
+      }
+
+      const data = (await response.json()) as { users: AdminUser[] };
+      setAdminUsers(data.users);
+    } catch {
+      setAdminUsersError("Could not load registered users.");
+    } finally {
+      setAdminUsersLoading(false);
+    }
+  }
 
   return (
     <div className="detail-shell">
@@ -222,10 +261,17 @@ export default function MyFinds() {
 
             {adminStats && (
               <div className="admin-profile-stats">
-                <div className="admin-profile-stat">
+                <button
+                  type="button"
+                  className="admin-profile-stat admin-profile-users-toggle"
+                  aria-expanded={showAdminUsers}
+                  aria-controls="admin-user-directory"
+                  onClick={() => void toggleAdminUsers()}
+                >
                   <span>Registered users</span>
                   <strong>{adminStats.registered_user_count}</strong>
-                </div>
+                  <small>{showAdminUsers ? "Hide users" : "View users"}</small>
+                </button>
                 <div className="admin-profile-stat">
                   <span>Most recent registration</span>
                   <strong>
@@ -238,6 +284,53 @@ export default function MyFinds() {
                     {formatAdminTimestamp(adminStats.latest_artwork_added_at)}
                   </strong>
                 </div>
+              </div>
+            )}
+
+            {showAdminUsers && (
+              <div id="admin-user-directory" className="admin-user-directory">
+                <div className="admin-user-directory-heading">
+                  <span className="eyebrow">REGISTERED USERS</span>
+                  <strong>{adminStats?.registered_user_count ?? 0} accounts</strong>
+                </div>
+
+                {adminUsersLoading && <p className="message">Loading users…</p>}
+                {adminUsersError && (
+                  <p className="form-error" role="alert">
+                    {adminUsersError}
+                  </p>
+                )}
+
+                {adminUsers && (
+                  <div className="admin-user-table-wrap">
+                    <table className="admin-user-table">
+                      <thead>
+                        <tr>
+                          <th scope="col">Username</th>
+                          <th scope="col">Email</th>
+                          <th scope="col">Registered</th>
+                          <th scope="col">Artworks uploaded</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {adminUsers.map((user) => (
+                          <tr key={user.id}>
+                            <td data-label="Username">{user.name || "—"}</td>
+                            <td data-label="Email">
+                              <a href={`mailto:${user.email}`}>{user.email}</a>
+                            </td>
+                            <td data-label="Registered">
+                              {formatAdminTimestamp(user.registered_at)}
+                            </td>
+                            <td data-label="Artworks uploaded">
+                              {user.artwork_count}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
           </section>
