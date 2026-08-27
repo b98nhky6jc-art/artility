@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from "react-router";
 import ArtworkMap from "./ArtworkMap";
 import "./App.css";
 import { getArtworkDisplayTitle } from "./artworkDisplay";
+import { getArtworkLocality } from "../shared/artwork-location";
 import ArtistAttribution from "./ArtistAttribution";
 import { authClient } from "./lib/auth-client";
 import EmailVerificationNotice from "./EmailVerificationNotice";
@@ -180,6 +181,8 @@ export default function ArtworkDetail() {
   const [editDescription, setEditDescription] = useState("");
   const [editInfrastructureType, setEditInfrastructureType] =
     useState<InfrastructureType>("Utility box / cabinet");
+  const [editLatitude, setEditLatitude] = useState("");
+  const [editLongitude, setEditLongitude] = useState("");
 
   const [reportingOpen, setReportingOpen] = useState(false);
   const [reportType, setReportType] = useState("");
@@ -202,6 +205,8 @@ export default function ArtworkDetail() {
     setEditInfrastructureType(
       normaliseInfrastructureType(artwork.infrastructure_type) ?? "Other",
     );
+    setEditLatitude(artwork.latitude.toString());
+    setEditLongitude(artwork.longitude.toString());
 
     setEditError("");
     setEditing(true);
@@ -261,6 +266,12 @@ export default function ArtworkDetail() {
           instagram_handle: editInstagramHandle,
           description: editDescription,
           infrastructure_type: editInfrastructureType,
+          ...(isAdmin
+            ? {
+                latitude: Number(editLatitude),
+                longitude: Number(editLongitude),
+              }
+            : {}),
         }),
       });
 
@@ -287,6 +298,10 @@ export default function ArtworkDetail() {
             artist_name: data.artwork?.artist_name ?? null,
             instagram_handle:
               data.artwork?.instagram_handle ?? null,
+            latitude: data.artwork?.latitude ?? current.latitude,
+            longitude: data.artwork?.longitude ?? current.longitude,
+            town: data.artwork?.town ?? null,
+            city: data.artwork?.city ?? null,
           }
           : current,
       );
@@ -621,7 +636,9 @@ export default function ArtworkDetail() {
 
             <p className="detail-meta">
               {formatInfrastructureType(artwork.infrastructure_type)}
-              {artwork.city ? ` · ${artwork.city}` : ""}
+              {getArtworkLocality(artwork)
+                ? ` · ${getArtworkLocality(artwork)}`
+                : ""}
             </p>
             {session?.user && !canContribute && (
               <EmailVerificationNotice email={session.user.email} compact />
@@ -727,6 +744,43 @@ export default function ArtworkDetail() {
                     placeholder="Optional details about the artwork"
                   />
                 </label>
+
+                {isAdmin && (
+                  <fieldset className="edit-location-fields">
+                    <legend>Artwork location</legend>
+                    <p>
+                      Updating coordinates refreshes the displayed locality.
+                    </p>
+                    <div>
+                      <label>
+                        Latitude
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          step="any"
+                          min={-90}
+                          max={90}
+                          value={editLatitude}
+                          onChange={(event) => setEditLatitude(event.target.value)}
+                          required
+                        />
+                      </label>
+                      <label>
+                        Longitude
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          step="any"
+                          min={-180}
+                          max={180}
+                          value={editLongitude}
+                          onChange={(event) => setEditLongitude(event.target.value)}
+                          required
+                        />
+                      </label>
+                    </div>
+                  </fieldset>
+                )}
 
                 {editError && (
                   <p className="form-error">{editError}</p>

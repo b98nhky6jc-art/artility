@@ -499,8 +499,6 @@ export default function AddArtwork() {
       formData.append("infrastructure_type", infrastructureType);
       formData.append("latitude", latitude.toString());
       formData.append("longitude", longitude.toString());
-      formData.append("town", "Leeds");
-      formData.append("city", "Leeds");
 
       const orderedFiles = [
         files[primaryPhotoIndex],

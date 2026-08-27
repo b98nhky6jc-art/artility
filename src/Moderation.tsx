@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
+import { getArtworkLocality } from "../shared/artwork-location";
 import "./App.css";
 
 type ModerationSubject = {
@@ -115,7 +116,7 @@ function getArtworkTitle(item: ModerationCase) {
 }
 
 function getArtworkLocation(item: ModerationCase) {
-  return item.subject.city || item.subject.town || "Location not recorded";
+  return getArtworkLocality(item.subject) || "Location not recorded";
 }
 
 function formatBytes(value: number | null) {

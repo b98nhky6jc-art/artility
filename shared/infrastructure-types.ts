@@ -4,6 +4,7 @@ export const INFRASTRUCTURE_TYPES = [
   "Bollard / post",
   "Door / shutter",
   "Bench / street furniture",
+  "Little library",
   "Tree / natural feature",
   "Bridge / underpass",
   "Sign / panel",

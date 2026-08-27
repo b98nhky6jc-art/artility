@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import ArtworkMap, { type RouteLineString } from "./ArtworkMap";
 import { getArtworkDisplayTitle } from "./artworkDisplay";
+import { getArtworkLocality } from "../shared/artwork-location";
 import { requestBrowserLocation, type UserLocation } from "./artworkDiscovery";
 import {
   MIN_ART_WALK_STOPS,
@@ -222,8 +223,8 @@ export default function ArtWalk() {
                     </Link>
                     <small>
                       {artwork.artist_name ?? "Artist unknown"}
-                      {artwork.city || artwork.town
-                        ? ` · ${artwork.city || artwork.town}`
+                      {getArtworkLocality(artwork)
+                        ? ` · ${getArtworkLocality(artwork)}`
                         : ""}
                     </small>
                   </div>

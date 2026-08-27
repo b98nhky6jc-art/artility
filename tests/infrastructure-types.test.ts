@@ -13,6 +13,7 @@ test("the public-art category list is controlled and complete", () => {
     "Bollard / post",
     "Door / shutter",
     "Bench / street furniture",
+    "Little library",
     "Tree / natural feature",
     "Bridge / underpass",
     "Sign / panel",
@@ -35,6 +36,7 @@ test("legacy infrastructure values map to the new categories", () => {
     "Utility box / cabinet",
   );
   assert.equal(normaliseInfrastructureType("bollard"), "Bollard / post");
+  assert.equal(normaliseInfrastructureType("little library"), "Little library");
   assert.equal(normaliseInfrastructureType("other"), "Other");
 });
 
@@ -42,6 +44,10 @@ test("canonical values are case-insensitive and unknown values are rejected", ()
   assert.equal(
     normaliseInfrastructureType("  WALL / MURAL "),
     "Wall / mural",
+  );
+  assert.equal(
+    normaliseInfrastructureType("  LITTLE LIBRARY  "),
+    "Little library",
   );
   assert.equal(normaliseInfrastructureType("bus stop"), null);
   assert.equal(formatInfrastructureType("bus stop"), "Other");

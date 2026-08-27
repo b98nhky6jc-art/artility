@@ -1,4 +1,5 @@
-import { formatInfrastructureType } from "../shared/infrastructure-types";
+import { formatInfrastructureType } from "../shared/infrastructure-types.ts";
+import { getArtworkLocality } from "../shared/artwork-location.ts";
 
 type ArtworkDisplayInfo = {
   id?: number;
@@ -18,7 +19,7 @@ export function getArtworkDisplayTitle(
   }
 
   const type = artwork.infrastructure_type?.trim();
-  const place = artwork.city?.trim() || artwork.town?.trim();
+  const place = getArtworkLocality(artwork);
 
   if (type && place) {
     return `${formatInfrastructureType(type)} in ${place}`;

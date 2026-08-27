@@ -26,9 +26,15 @@ import {
   RoutingError,
   validateRoutePlanInput,
 } from "./routing.js";
+import {
+  isValidArtworkCoordinates,
+  refreshArtworkLocationMetadata,
+  reverseGeocodeArtworkLocation,
+} from "./location-metadata.js";
 
 type ArtilityEnv = Env & {
   OPENROUTESERVICE_API_KEY?: string;
+  LOCATION_GEOCODER_URL?: string;
 };
 
 const MAX_PHOTOS_PER_ARTWORK = 5;
@@ -1302,6 +1308,107 @@ export default {
       );
     }
 
+    if (
+      url.pathname === "/api/admin/artwork-location-metadata/cleanup" &&
+      request.method === "POST"
+    ) {
+      const access = await requireAdmin();
+
+      if (!access.ok) {
+        return access.response;
+      }
+
+      const body = (await request.json().catch(() => ({}))) as {
+        after_id?: unknown;
+        limit?: unknown;
+        dry_run?: unknown;
+      };
+      const afterId = Math.max(0, Number(body.after_id) || 0);
+      const limit = Math.min(25, Math.max(1, Number(body.limit) || 10));
+      const dryRun = body.dry_run !== false;
+      const batch = await env.DB.prepare(`
+        SELECT id, latitude, longitude, town, city
+        FROM artworks
+        WHERE id > ?
+        ORDER BY id ASC
+        LIMIT ?
+      `)
+        .bind(afterId, limit)
+        .all<{
+          id: number;
+          latitude: number;
+          longitude: number;
+          town: string | null;
+          city: string | null;
+        }>();
+
+      const changes: Array<{
+        artwork_id: number;
+        coordinates: { latitude: number; longitude: number };
+        before: { town: string | null; city: string | null };
+        after: { town: string | null; city: string | null };
+        changed: boolean;
+      }> = [];
+
+      for (const artwork of batch.results) {
+        const before = { town: artwork.town, city: artwork.city };
+        const metadata = await reverseGeocodeArtworkLocation(
+          Number(artwork.latitude),
+          Number(artwork.longitude),
+          { endpoint: env.LOCATION_GEOCODER_URL },
+        );
+        const refreshedArtwork = refreshArtworkLocationMetadata(
+          artwork,
+          metadata,
+        );
+        const after = {
+          town: refreshedArtwork.town,
+          city: refreshedArtwork.city,
+        };
+        const changed = before.town !== after.town || before.city !== after.city;
+
+        if (changed && !dryRun) {
+          await env.DB.prepare(`
+            UPDATE artworks
+            SET town = ?, city = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `)
+            .bind(after.town, after.city, artwork.id)
+            .run();
+        }
+
+        changes.push({
+          artwork_id: artwork.id,
+          coordinates: {
+            latitude: Number(refreshedArtwork.latitude),
+            longitude: Number(refreshedArtwork.longitude),
+          },
+          before,
+          after,
+          changed,
+        });
+      }
+
+      console.info("Artwork location metadata cleanup batch", {
+        administratorId: access.userId,
+        dryRun,
+        afterId,
+        checked: changes.length,
+        changed: changes.filter((change) => change.changed).length,
+      });
+
+      return Response.json({
+        dry_run: dryRun,
+        checked: changes.length,
+        changed: changes.filter((change) => change.changed).length,
+        next_after_id:
+          changes.length === limit
+            ? changes[changes.length - 1].artwork_id
+            : null,
+        changes,
+      });
+    }
+
     const adminArtworkMatch = url.pathname.match(
       /^\/api\/admin\/artworks\/(\d+)$/,
     );
@@ -1920,16 +2027,12 @@ export default {
         const latitude = Number(formData.get("latitude"));
         const longitude = Number(formData.get("longitude"));
 
-        const town = String(formData.get("town") ?? "").trim();
-        const city = String(formData.get("city") ?? "").trim();
-
         const photos = formData
           .getAll("photos")
           .filter((value): value is File => value instanceof File);
 
         if (
-          !Number.isFinite(latitude) ||
-          !Number.isFinite(longitude)
+          !isValidArtworkCoordinates(latitude, longitude)
         ) {
           return Response.json(
             { error: "Valid location is required" },
@@ -1970,6 +2073,11 @@ export default {
           instagramHandle,
         );
         const artistId = resolvedArtist?.id ?? null;
+        const locationMetadata = await reverseGeocodeArtworkLocation(
+          latitude,
+          longitude,
+          { endpoint: env.LOCATION_GEOCODER_URL },
+        );
 
         const artworkInsert = await env.DB.prepare(`
       INSERT INTO artworks (
@@ -1991,8 +2099,8 @@ export default {
             description || null,
             latitude,
             longitude,
-            town || null,
-            city || null,
+            locationMetadata.town,
+            locationMetadata.city,
             infrastructureType,
             artistId,
             userId
@@ -2906,6 +3014,10 @@ if (artworkDetailMatch && request.method === "GET") {
             artworks.id,
             artworks.title,
             artworks.description,
+            artworks.latitude,
+            artworks.longitude,
+            artworks.town,
+            artworks.city,
             artworks.infrastructure_type,
             artworks.artist_id,
             artists.name AS artist_name,
@@ -2921,6 +3033,10 @@ if (artworkDetailMatch && request.method === "GET") {
             id: number;
             title: string | null;
             description: string | null;
+            latitude: number;
+            longitude: number;
+            town: string | null;
+            city: string | null;
             infrastructure_type: string;
             artist_id: number | null;
             artist_name: string | null;
@@ -2942,6 +3058,8 @@ if (artworkDetailMatch && request.method === "GET") {
           "infrastructure_type",
           "artist_name",
           "instagram_handle",
+          "latitude",
+          "longitude",
         ]);
 
         for (const key of Object.keys(body)) {
@@ -2954,9 +3072,41 @@ if (artworkDetailMatch && request.method === "GET") {
 
           const value = body[key];
 
-          if (value !== null && typeof value !== "string") {
+          const isCoordinate = key === "latitude" || key === "longitude";
+
+          if (
+            isCoordinate
+              ? typeof value !== "number"
+              : value !== null && typeof value !== "string"
+          ) {
             return Response.json(
-              { error: `Field "${key}" must be text` },
+              {
+                error: isCoordinate
+                  ? `Field "${key}" must be a number`
+                  : `Field "${key}" must be text`,
+              },
+              { status: 400 },
+            );
+          }
+        }
+
+        const coordinatesTouched =
+          Object.prototype.hasOwnProperty.call(body, "latitude") ||
+          Object.prototype.hasOwnProperty.call(body, "longitude");
+
+        if (coordinatesTouched) {
+          const adminAccess = await requireAdmin();
+
+          if (!adminAccess.ok) {
+            return adminAccess.response;
+          }
+
+          if (
+            !Object.prototype.hasOwnProperty.call(body, "latitude") ||
+            !Object.prototype.hasOwnProperty.call(body, "longitude")
+          ) {
+            return Response.json(
+              { error: "Latitude and longitude must be updated together" },
               { status: 400 },
             );
           }
@@ -3014,6 +3164,29 @@ if (artworkDetailMatch && request.method === "GET") {
           );
         }
 
+        const latitude = coordinatesTouched
+          ? Number(body.latitude)
+          : Number(current.latitude);
+        const longitude = coordinatesTouched
+          ? Number(body.longitude)
+          : Number(current.longitude);
+
+        if (!isValidArtworkCoordinates(latitude, longitude)) {
+          return Response.json(
+            { error: "Valid latitude and longitude are required" },
+            { status: 400 },
+          );
+        }
+
+        const coordinatesChanged =
+          latitude !== Number(current.latitude) ||
+          longitude !== Number(current.longitude);
+        const locationMetadata = coordinatesChanged
+          ? await reverseGeocodeArtworkLocation(latitude, longitude, {
+            endpoint: env.LOCATION_GEOCODER_URL,
+          })
+          : { town: current.town, city: current.city };
+
         const artistFieldsTouched =
           Object.prototype.hasOwnProperty.call(body, "artist_name") ||
           Object.prototype.hasOwnProperty.call(
@@ -3056,6 +3229,10 @@ if (artworkDetailMatch && request.method === "GET") {
         const before = {
           title: current.title,
           description: current.description,
+          latitude: Number(current.latitude),
+          longitude: Number(current.longitude),
+          town: current.town,
+          city: current.city,
           infrastructure_type: current.infrastructure_type,
           artist_id: current.artist_id,
           artist_name: current.artist_name,
@@ -3065,6 +3242,10 @@ if (artworkDetailMatch && request.method === "GET") {
         const after = {
           title,
           description,
+          latitude,
+          longitude,
+          town: locationMetadata.town,
+          city: locationMetadata.city,
           infrastructure_type: infrastructureType,
           artist_id: artistId,
           artist_name: finalArtistName,
@@ -3084,6 +3265,10 @@ if (artworkDetailMatch && request.method === "GET") {
             UPDATE artworks
             SET title = ?,
                 description = ?,
+                latitude = ?,
+                longitude = ?,
+                town = ?,
+                city = ?,
                 infrastructure_type = ?,
                 artist_id = ?,
                 updated_at = CURRENT_TIMESTAMP
@@ -3091,6 +3276,10 @@ if (artworkDetailMatch && request.method === "GET") {
           `).bind(
             title,
             description,
+            latitude,
+            longitude,
+            locationMetadata.town,
+            locationMetadata.city,
             infrastructureType,
             artistId,
             artworkId,

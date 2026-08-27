@@ -18,6 +18,7 @@ SET infrastructure_type = CASE lower(trim(infrastructure_type))
   WHEN 'bench / street furniture' THEN 'Bench / street furniture'
   WHEN 'bench' THEN 'Bench / street furniture'
   WHEN 'street furniture' THEN 'Bench / street furniture'
+  WHEN 'little library' THEN 'Little library'
   WHEN 'tree / natural feature' THEN 'Tree / natural feature'
   WHEN 'tree' THEN 'Tree / natural feature'
   WHEN 'natural feature' THEN 'Tree / natural feature'
@@ -41,6 +42,7 @@ WHEN NEW.infrastructure_type NOT IN (
   'Bollard / post',
   'Door / shutter',
   'Bench / street furniture',
+  'Little library',
   'Tree / natural feature',
   'Bridge / underpass',
   'Sign / panel',
@@ -59,6 +61,7 @@ WHEN NEW.infrastructure_type NOT IN (
   'Bollard / post',
   'Door / shutter',
   'Bench / street furniture',
+  'Little library',
   'Tree / natural feature',
   'Bridge / underpass',
   'Sign / panel',

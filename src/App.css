@@ -1220,6 +1220,39 @@ main {
   resize: vertical;
 }
 
+.edit-location-fields {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.edit-location-fields legend {
+  padding: 0 6px;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.edit-location-fields p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.edit-location-fields > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 560px) {
+  .edit-location-fields > div {
+    grid-template-columns: 1fr;
+  }
+}
+
 .edit-details-form input:focus,
 .edit-details-form textarea:focus {
   outline: 2px solid var(--focus-ring);
