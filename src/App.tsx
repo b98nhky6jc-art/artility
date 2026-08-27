@@ -17,7 +17,7 @@ import {
 } from "./artworkDiscovery";
 import { formatInfrastructureType } from "../shared/infrastructure-types";
 import AddToWalkButton from "./AddToWalkButton";
-import { homeAreaKey, type HomeArea } from "./HomeAreaSettings";
+import { readHomeArea, type HomeArea } from "./homeAreaStorage";
 
 
 type Artwork = {
@@ -71,7 +71,23 @@ function App() {
 
     loadArtworks();
   }, []);
-  useEffect(() => { if (session?.user.id) { const saved = localStorage.getItem(homeAreaKey(session.user.id)); if (saved) setHomeArea(JSON.parse(saved) as HomeArea); } }, [session?.user.id]);
+  useEffect(() => {
+    const userId = session?.user.id;
+    const updateHomeArea = () => setHomeArea(userId ? readHomeArea(userId) : null);
+    const timer = window.setTimeout(updateHomeArea, 0);
+
+    if (userId) {
+      window.addEventListener("artility-home-area-updated", updateHomeArea);
+    }
+
+    return () => {
+      window.clearTimeout(timer);
+
+      if (userId) {
+        window.removeEventListener("artility-home-area-updated", updateHomeArea);
+      }
+    };
+  }, [session?.user.id]);
 
   useEffect(() => {
     let isCurrent = true;

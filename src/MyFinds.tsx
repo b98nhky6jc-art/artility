@@ -9,7 +9,6 @@ import { canUserContribute } from "./emailVerification";
 import { formatInfrastructureType } from "../shared/infrastructure-types";
 import { useAdminAccess } from "./useModeratorAccess";
 import AddToWalkButton from "./AddToWalkButton";
-import CommunitySafetyNotice from "./CommunitySafetyNotice";
 import HomeAreaSettings from "./HomeAreaSettings";
 
 type Find = {
@@ -170,7 +169,7 @@ export default function MyFinds() {
 
       <main className="detail-main page-main">
         <section className="page-panel profile-summary">
-          <div>
+          <div className="profile-content">
             <span className="eyebrow">PROFILE</span>
             <h1>My Finds</h1>
             <p>A growing collection of public art you've found in the wild.</p>
@@ -203,44 +202,51 @@ export default function MyFinds() {
                 </button>
               </div>
             )}
-            {session?.user && <CommunitySafetyNotice context="profile" />}
+
+            <div className="profile-stats" aria-label="Your find statistics">
+              <div className="profile-stat">
+                <strong>{finds.length}</strong>
+                <span>Finds</span>
+              </div>
+
+              <div className="profile-stat">
+                <strong>{cityCount}</strong>
+                <span>Cities</span>
+              </div>
+
+              <div className="profile-stat">
+                <strong>
+                  {latestFind
+                    ? new Date(latestFind.checked_in_at).toLocaleDateString(
+                      "en-GB",
+                      {
+                        day: "2-digit",
+                        month: "short",
+                      },
+                    )
+                    : "—"}
+                </strong>
+                <span>Latest find</span>
+              </div>
+            </div>
+
+            {session?.user && (
+              <p className="profile-privacy-hint">
+                Keep your public profile comfortable: don’t add an address, phone number or other sensitive details.
+              </p>
+            )}
+
+            {session?.user && (
+              <HomeAreaSettings key={session.user.id} userId={session.user.id} />
+            )}
+
+            {session?.user && !canContribute && (
+              <div className="profile-verification">
+                <EmailVerificationNotice email={session.user.email} compact />
+              </div>
+            )}
           </div>
-
-          <div className="profile-stats">
-            <div className="profile-stat">
-              <strong>{finds.length}</strong>
-              <span>Finds</span>
-            </div>
-
-            <div className="profile-stat">
-              <strong>{cityCount}</strong>
-              <span>Cities</span>
-            </div>
-
-            <div className="profile-stat">
-              <strong>
-                {latestFind
-                  ? new Date(latestFind.checked_in_at).toLocaleDateString(
-                    "en-GB",
-                    {
-                      day: "2-digit",
-                      month: "short",
-                    },
-                  )
-                  : "—"}
-              </strong>
-              <span>Latest find</span>
-            </div>
-          </div>
-
-          {session?.user && !canContribute && (
-            <div className="profile-verification">
-              <EmailVerificationNotice email={session.user.email} compact />
-            </div>
-          )}
         </section>
-
-        {session?.user && <HomeAreaSettings userId={session.user.id} />}
 
         {isAdmin && (
           <section className="page-panel admin-profile-overview">

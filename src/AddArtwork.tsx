@@ -609,16 +609,16 @@ export default function AddArtwork() {
                   }}
                 />
 
-                <span className="photo-upload-helper">
-                  Only upload photos you took or have permission to share. Avoid identifiable people, private addresses and number plates.
-                </span>
-
                 <span className="photo-upload-icon">📷</span>
 
                 <strong>Choose up to {MAX_PHOTOS_PER_ARTWORK} artwork photos</strong>
 
-                <span>
+                <span className="photo-upload-instruction">
                   Drop up to {MAX_PHOTOS_PER_ARTWORK} photos here, or click to browse
+                </span>
+
+                <span className="photo-upload-helper">
+                  Only upload photos you took or have permission to share. Avoid identifiable people, private addresses and number plates.
                 </span>
               </label>
 
