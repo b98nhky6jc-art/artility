@@ -207,6 +207,7 @@ main {
   gap: clamp(42px, 5vw, 82px);
 
   overflow: hidden;
+  padding-bottom: clamp(28px, 2.5vw, 40px);
 }
 
 .hero h2 {
@@ -267,16 +268,21 @@ main {
 
   background: var(--action-bg);
   color: var(--action-text);
-  box-shadow: 0 4px 0 rgba(37, 19, 15, 0.2);
+  text-decoration: none;
 }
 
 .primary-button:hover {
   background: var(--action-hover);
-  transform: translateY(-2px);
+  transform: translateY(-1px);
 }
 
-.primary-button:active,
-.secondary-button:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(37, 19, 15, 0.2); }
+.primary-button:active { transform: translateY(0); }
+
+.hero-actions .primary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
 
 .secondary-button {
   background: transparent;
@@ -475,6 +481,10 @@ main {
 .nearby-section {
   margin-top: var(--section-gap);
   padding-top: 0;
+}
+
+.home-main .nearby-section {
+  margin-top: clamp(36px, 3vw, 48px);
 }
 
 .nearby-heading {
@@ -2077,6 +2087,16 @@ main {
   background: var(--soft-yellow);
 }
 
+.photo-upload-helper {
+  align-self: stretch;
+  max-width: 680px;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+  text-align: left;
+}
+
 .photo-upload input {
   display: none;
 }
@@ -3340,6 +3360,10 @@ main {
     text-align: center;
   }
 
+  .hero-actions .primary-button {
+    justify-content: center;
+  }
+
   /* Map */
 
   .map-wrapper,
@@ -3718,6 +3742,11 @@ main {
     min-height: 220px;
 
     padding: 24px 18px;
+  }
+
+  .photo-upload-helper {
+    margin-bottom: 4px;
+    font-size: 13px;
   }
 
   .upload-preview-grid {

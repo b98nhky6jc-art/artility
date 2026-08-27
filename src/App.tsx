@@ -133,7 +133,8 @@ function App() {
 
             <div className="hero-actions">
               <Link to="/add-artwork" className="primary-button">
-                ＋ Add artwork
+                <span aria-hidden="true">+</span>
+                <span>Add artwork</span>
               </Link>
             </div>
           </div>
