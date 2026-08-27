@@ -3,8 +3,6 @@ import { Link } from "react-router";
 import "./App.css";
 import ArtworkMap from "./ArtworkMap";
 import { authClient } from "./lib/auth-client";
-import { getArtworkDisplayTitle } from "./artworkDisplay";
-import ArtistAttribution from "./ArtistAttribution";
 import EmailVerificationNotice from "./EmailVerificationNotice";
 import { canUserContribute } from "./emailVerification";
 import {
@@ -15,7 +13,6 @@ import {
   type ArtworkSort,
   type UserLocation,
 } from "./artworkDiscovery";
-import { formatInfrastructureType } from "../shared/infrastructure-types";
 import AddToWalkButton from "./AddToWalkButton";
 
 
@@ -35,6 +32,10 @@ type Artwork = {
   artist_id: number | null;
   created_at: string | null;
 };
+
+function getDiscoveryArtworkTitle(artwork: Artwork) {
+  return artwork.title?.trim() || "Untitled artwork";
+}
 
 function App() {
   const [artworks, setArtworks] = useState<Artwork[]>([]);
@@ -206,7 +207,7 @@ function App() {
                     {artwork.primary_photo ? (
                       <img
                         src={`/api/images/${artwork.primary_photo}`}
-                        alt={getArtworkDisplayTitle(artwork)}
+                        alt={getDiscoveryArtworkTitle(artwork)}
                         className="artwork-photo"
                         loading="lazy"
                         decoding="async"
@@ -217,7 +218,6 @@ function App() {
                       </span>
                     )}
 
-                    <span className="artwork-number">#{artwork.id}</span>
                   </div>
 
                   <div className="artwork-content">
@@ -233,23 +233,11 @@ function App() {
                       )}
                     </div>
 
-                    <h4>{getArtworkDisplayTitle(artwork)}</h4>
+                    <h4>{getDiscoveryArtworkTitle(artwork)}</h4>
 
                     <p className="artist">
-                      <ArtistAttribution
-  artistName={artwork.artist_name}
-  instagramHandle={artwork.instagram_handle}
-/>
+                      {artwork.artist_name ?? "Artist unknown"}
                     </p>
-
-                    <p className="metadata">
-                      {formatInfrastructureType(artwork.infrastructure_type)}
-                      {artwork.city ? ` · ${artwork.city}` : ""}
-                    </p>
-
-                    {artwork.description && (
-                      <p className="description">{artwork.description}</p>
-                    )}
 
                     <span className="card-button">View artwork →</span>
                   </div>
