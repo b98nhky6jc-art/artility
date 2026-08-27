@@ -53,11 +53,13 @@ main {
   width: 100%;
   max-width: none;
   margin: 0 auto;
-  padding: 0 var(--content-gutter) 64px;
+  padding: 0 0 64px;
 }
 
-.page-main {
+.page-main,
+.detail-main {
   width: 100%;
+  max-width: none;
 }
 
 .page-panel {
@@ -852,8 +854,6 @@ main {
 }
 
 .detail-main {
-  width: 100%;
-  max-width: 1280px;
   margin: 0 auto;
 }
 
@@ -1585,7 +1585,6 @@ main {
 }
 
 .profile-summary {
-  max-width: 980px;
   margin: 0 auto clamp(36px, 4vw, 52px);
   padding: clamp(30px, 3.2vw, 44px);
 
