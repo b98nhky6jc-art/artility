@@ -3060,6 +3060,7 @@ if (artworkDetailMatch && request.method === "GET") {
           "instagram_handle",
           "latitude",
           "longitude",
+          "refresh_location_metadata",
         ]);
 
         for (const key of Object.keys(body)) {
@@ -3073,16 +3074,21 @@ if (artworkDetailMatch && request.method === "GET") {
           const value = body[key];
 
           const isCoordinate = key === "latitude" || key === "longitude";
+          const isLocationRefresh = key === "refresh_location_metadata";
 
           if (
             isCoordinate
               ? typeof value !== "number"
+              : isLocationRefresh
+                ? typeof value !== "boolean"
               : value !== null && typeof value !== "string"
           ) {
             return Response.json(
               {
                 error: isCoordinate
                   ? `Field "${key}" must be a number`
+                  : isLocationRefresh
+                    ? `Field "${key}" must be true or false`
                   : `Field "${key}" must be text`,
               },
               { status: 400 },
@@ -3093,8 +3099,10 @@ if (artworkDetailMatch && request.method === "GET") {
         const coordinatesTouched =
           Object.prototype.hasOwnProperty.call(body, "latitude") ||
           Object.prototype.hasOwnProperty.call(body, "longitude");
+        const locationRefreshRequested =
+          body.refresh_location_metadata === true;
 
-        if (coordinatesTouched) {
+        if (coordinatesTouched || locationRefreshRequested) {
           const adminAccess = await requireAdmin();
 
           if (!adminAccess.ok) {
@@ -3181,7 +3189,8 @@ if (artworkDetailMatch && request.method === "GET") {
         const coordinatesChanged =
           latitude !== Number(current.latitude) ||
           longitude !== Number(current.longitude);
-        const locationMetadata = coordinatesChanged
+        const locationMetadata =
+          coordinatesChanged || locationRefreshRequested
           ? await reverseGeocodeArtworkLocation(latitude, longitude, {
             endpoint: env.LOCATION_GEOCODER_URL,
           })

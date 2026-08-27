@@ -174,6 +174,9 @@ export default function ArtworkDetail() {
   const [editError, setEditError] = useState("");
   const [deletingArtwork, setDeletingArtwork] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [refreshingLocation, setRefreshingLocation] = useState(false);
+  const [locationRefreshError, setLocationRefreshError] = useState("");
+  const [locationRefreshMessage, setLocationRefreshMessage] = useState("");
 
   const [editTitle, setEditTitle] = useState("");
   const [editArtistName, setEditArtistName] = useState("");
@@ -241,6 +244,50 @@ export default function ArtworkDetail() {
         error instanceof Error ? error.message : "Could not delete this artwork.",
       );
       setDeletingArtwork(false);
+    }
+  }
+
+  async function refreshLocationLabel() {
+    if (!artwork) {
+      return;
+    }
+
+    setRefreshingLocation(true);
+    setLocationRefreshError("");
+    setLocationRefreshMessage("");
+
+    try {
+      const response = await fetch(`/api/artworks/${artwork.id}`, {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ refresh_location_metadata: true }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Could not refresh the location label.");
+      }
+
+      setArtwork((current) =>
+        current
+          ? {
+            ...current,
+            town: data.artwork?.town ?? null,
+            city: data.artwork?.city ?? null,
+          }
+          : current,
+      );
+      setLocationRefreshMessage("Location label refreshed.");
+    } catch (error) {
+      setLocationRefreshError(
+        error instanceof Error
+          ? error.message
+          : "Could not refresh the location label.",
+      );
+    } finally {
+      setRefreshingLocation(false);
     }
   }
 
@@ -658,16 +705,39 @@ export default function ArtworkDetail() {
                   </button>
                 )}
                 {isAdmin && (
-                  <button
-                    type="button"
-                    className="delete-artwork-button"
-                    disabled={deletingArtwork}
-                    onClick={() => void deleteArtwork()}
-                  >
-                    {deletingArtwork ? "Deleting…" : "Delete artwork"}
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className="edit-details-button"
+                      disabled={refreshingLocation}
+                      onClick={() => void refreshLocationLabel()}
+                    >
+                      {refreshingLocation
+                        ? "Refreshing location…"
+                        : "Refresh location label"}
+                    </button>
+                    <button
+                      type="button"
+                      className="delete-artwork-button"
+                      disabled={deletingArtwork}
+                      onClick={() => void deleteArtwork()}
+                    >
+                      {deletingArtwork ? "Deleting…" : "Delete artwork"}
+                    </button>
+                  </>
                 )}
               </div>
+            )}
+
+            {locationRefreshError && (
+              <p className="form-error" role="alert">
+                {locationRefreshError}
+              </p>
+            )}
+            {locationRefreshMessage && (
+              <p className="form-success" role="status" aria-live="polite">
+                {locationRefreshMessage}
+              </p>
             )}
 
             {deleteError && (
