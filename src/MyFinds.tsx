@@ -174,7 +174,6 @@ export default function MyFinds() {
             <span className="eyebrow">PROFILE</span>
             <h1>My Finds</h1>
             <p>A growing collection of public art you've found in the wild.</p>
-            {session?.user && <CommunitySafetyNotice context="profile" />}
             {session?.user && (
               <div className="profile-user">
                 <span>
@@ -204,6 +203,7 @@ export default function MyFinds() {
                 </button>
               </div>
             )}
+            {session?.user && <CommunitySafetyNotice context="profile" />}
           </div>
 
           <div className="profile-stats">
