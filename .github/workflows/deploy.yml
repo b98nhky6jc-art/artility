@@ -25,12 +25,13 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Apply database migrations
+      - name: Enforce the artwork photo limit
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: d1 migrations apply box-app-db --remote
+          command: >-
+            d1 execute box-app-db --remote --command "CREATE TRIGGER IF NOT EXISTS photos_limit_per_artwork BEFORE INSERT ON photos WHEN (SELECT COUNT(*) FROM photos WHERE artwork_id = NEW.artwork_id) >= 5 BEGIN SELECT RAISE(ABORT, 'artwork photo limit reached'); END;"
 
       - name: Deploy to Cloudflare
         uses: cloudflare/wrangler-action@v3
