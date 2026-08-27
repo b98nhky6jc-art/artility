@@ -27,6 +27,7 @@ import {
   validateRoutePlanInput,
 } from "./routing.js";
 import {
+  hasDuplicatedLocationMetadata,
   isValidArtworkCoordinates,
   refreshArtworkLocationMetadata,
   reverseGeocodeArtworkLocation,
@@ -77,6 +78,60 @@ type ResolvedArtist = {
   name: string;
   instagram_handle: string | null;
 };
+
+type ArtworkLocationRecord = {
+  id: number;
+  latitude: number;
+  longitude: number;
+  town: string | null;
+  city: string | null;
+};
+
+/**
+ * Correct the duplicated locality fields left by earlier imports. This runs
+ * on the server while serving the artwork, so people browsing the site never
+ * need to identify or repair a bad place name themselves.
+ */
+async function correctLegacyArtworkLocationMetadata(
+  env: ArtilityEnv,
+  artwork: ArtworkLocationRecord,
+) {
+  if (!hasDuplicatedLocationMetadata(artwork)) {
+    return artwork;
+  }
+
+  const metadata = await reverseGeocodeArtworkLocation(
+    artwork.latitude,
+    artwork.longitude,
+    { endpoint: env.LOCATION_GEOCODER_URL },
+  );
+  const refreshed = refreshArtworkLocationMetadata(artwork, metadata);
+
+  if (
+    refreshed.town === artwork.town &&
+    refreshed.city === artwork.city
+  ) {
+    return artwork;
+  }
+
+  await env.DB.prepare(`
+    UPDATE artworks
+    SET town = ?, city = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `)
+    .bind(refreshed.town, refreshed.city, artwork.id)
+    .run();
+
+  console.info("Corrected duplicated artwork location metadata", {
+    artworkId: artwork.id,
+    latitude: artwork.latitude,
+    longitude: artwork.longitude,
+    town: refreshed.town,
+    city: refreshed.city,
+  });
+
+  return refreshed;
+}
 
 class ArtistIdentityError extends Error {}
 
@@ -2660,9 +2715,28 @@ photos.created_at AS photo_added_at
             AND publishable_photo.moderation_state = 'approved'
         )
         ORDER BY artworks.created_at DESC
-      `).all();
+      `).all<ArtworkLocationRecord & Record<string, unknown>>();
 
-      return Response.json(result.results);
+      const artworks = [...result.results];
+      const legacyArtworkIndex = artworks.findIndex((artwork) =>
+        hasDuplicatedLocationMetadata(artwork),
+      );
+
+      // Correct one old imported record per listing request. This keeps the
+      // public response prompt and avoids a bulk burst to the geocoder, while
+      // ensuring cards repair themselves as people use the site.
+      if (legacyArtworkIndex !== -1) {
+        const correctedArtwork = await correctLegacyArtworkLocationMetadata(
+          env,
+          artworks[legacyArtworkIndex],
+        );
+        artworks[legacyArtworkIndex] = {
+          ...artworks[legacyArtworkIndex],
+          ...correctedArtwork,
+        };
+      }
+
+      return Response.json(artworks);
     }
 
     const artworkStatusReportsMatch = url.pathname.match(
@@ -2973,6 +3047,11 @@ if (artworkDetailMatch && request.method === "GET") {
     );
   }
 
+  const correctedArtwork = await correctLegacyArtworkLocationMetadata(
+    env,
+    artwork as ArtworkLocationRecord,
+  );
+
   const photos = await env.DB.prepare(`
     SELECT
       id,
@@ -2988,7 +3067,7 @@ if (artworkDetailMatch && request.method === "GET") {
     .all();
 
   return Response.json({
-    artwork,
+    artwork: { ...artwork, ...correctedArtwork },
     photos: photos.results,
   });
 }
@@ -3060,7 +3139,6 @@ if (artworkDetailMatch && request.method === "GET") {
           "instagram_handle",
           "latitude",
           "longitude",
-          "refresh_location_metadata",
         ]);
 
         for (const key of Object.keys(body)) {
@@ -3074,21 +3152,16 @@ if (artworkDetailMatch && request.method === "GET") {
           const value = body[key];
 
           const isCoordinate = key === "latitude" || key === "longitude";
-          const isLocationRefresh = key === "refresh_location_metadata";
 
           if (
             isCoordinate
               ? typeof value !== "number"
-              : isLocationRefresh
-                ? typeof value !== "boolean"
               : value !== null && typeof value !== "string"
           ) {
             return Response.json(
               {
                 error: isCoordinate
                   ? `Field "${key}" must be a number`
-                  : isLocationRefresh
-                    ? `Field "${key}" must be true or false`
                   : `Field "${key}" must be text`,
               },
               { status: 400 },
@@ -3099,10 +3172,8 @@ if (artworkDetailMatch && request.method === "GET") {
         const coordinatesTouched =
           Object.prototype.hasOwnProperty.call(body, "latitude") ||
           Object.prototype.hasOwnProperty.call(body, "longitude");
-        const locationRefreshRequested =
-          body.refresh_location_metadata === true;
 
-        if (coordinatesTouched || locationRefreshRequested) {
+        if (coordinatesTouched) {
           const adminAccess = await requireAdmin();
 
           if (!adminAccess.ok) {
@@ -3189,8 +3260,7 @@ if (artworkDetailMatch && request.method === "GET") {
         const coordinatesChanged =
           latitude !== Number(current.latitude) ||
           longitude !== Number(current.longitude);
-        const locationMetadata =
-          coordinatesChanged || locationRefreshRequested
+        const locationMetadata = coordinatesChanged
           ? await reverseGeocodeArtworkLocation(latitude, longitude, {
             endpoint: env.LOCATION_GEOCODER_URL,
           })

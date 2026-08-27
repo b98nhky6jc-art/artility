@@ -65,6 +65,22 @@ export function locationMetadataFromAddress(
   return { town: locality === city ? null : town, city };
 }
 
+/**
+ * Older imports stored the same place name in both fields. New location
+ * lookups deliberately avoid that duplication, so it is a safe marker for a
+ * legacy record whose label should be refreshed from its coordinates.
+ */
+export function hasDuplicatedLocationMetadata(
+  metadata: ArtworkLocationMetadata,
+) {
+  return (
+    metadata.town !== null &&
+    metadata.city !== null &&
+    metadata.town.trim().toLocaleLowerCase() ===
+      metadata.city.trim().toLocaleLowerCase()
+  );
+}
+
 /** Updates only place names; physical coordinates deliberately pass through. */
 export function refreshArtworkLocationMetadata<T extends ArtworkWithLocationMetadata>(
   artwork: T,
