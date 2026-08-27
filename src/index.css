@@ -86,7 +86,8 @@
   --radius-pill: 999px;
   --page-width: 1560px;
   --frame-width: min(calc(100% - 64px), var(--page-width));
-  --content-gutter: clamp(24px, 2.6vw, 44px);
+  --page-gutter: clamp(16px, 4vw, 64px);
+  --content-gutter: var(--page-gutter);
   --panel-padding: clamp(28px, 3vw, 48px);
   --section-gap: clamp(32px, 4vw, 48px);
   --page-title-size: clamp(54px, 6vw, 88px);
