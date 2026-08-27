@@ -259,6 +259,7 @@ main {
 
   font-weight: 750;
   cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
 }
 
 .primary-button {
@@ -266,18 +267,27 @@ main {
 
   background: var(--action-bg);
   color: var(--action-text);
+  box-shadow: 0 4px 0 rgba(37, 19, 15, 0.2);
 }
 
 .primary-button:hover {
   background: var(--action-hover);
+  transform: translateY(-2px);
 }
+
+.primary-button:active,
+.secondary-button:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(37, 19, 15, 0.2); }
 
 .secondary-button {
   background: transparent;
   color: var(--on-dark);
 
   border: 1px solid var(--dark-border);
+  box-shadow: 0 3px 0 rgba(37, 19, 15, 0.16);
 }
+
+.secondary-button:hover { transform: translateY(-2px); }
+.edit-cancel-button { display: block; margin: 0.8rem auto 0; }
 
 
 /* =========================================================

@@ -739,6 +739,9 @@ export default function ArtworkDetail() {
                 >
                   {savingEdit ? "Saving…" : "Save changes"}
                 </button>
+                <button type="button" className="text-button edit-cancel-button" disabled={savingEdit} onClick={() => { setEditing(false); setEditError(""); }}>
+                  Cancel
+                </button>
               </form>
             )}
 

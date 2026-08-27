@@ -284,7 +284,7 @@ async function createThumbnail(file: File): Promise<File> {
   }
 }
 
-const MAX_PHOTOS_PER_ARTWORK = 3;
+const MAX_PHOTOS_PER_ARTWORK = 5;
 export default function AddArtwork() {
   const navigate = useNavigate();
   const { data: session, isPending } = authClient.useSession();
