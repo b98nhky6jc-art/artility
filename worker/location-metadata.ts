@@ -70,9 +70,13 @@ export function locationMetadataFromAddress(
  * lookups deliberately avoid that duplication, so it is a safe marker for a
  * legacy record whose label should be refreshed from its coordinates.
  */
-export function hasDuplicatedLocationMetadata(
+export function needsLocationMetadataRefresh(
   metadata: ArtworkLocationMetadata,
 ) {
+  if (metadata.town === null && metadata.city === null) {
+    return true;
+  }
+
   return (
     metadata.town !== null &&
     metadata.city !== null &&
@@ -118,7 +122,11 @@ export async function reverseGeocodeArtworkLocation(
 
   try {
     const response = await (options.fetcher ?? fetch)(requestUrl, {
-      headers: { accept: "application/json", "accept-language": "en" },
+      headers: {
+        accept: "application/json",
+        "accept-language": "en",
+        "user-agent": "Artility/1.0 (https://artility.co.uk)",
+      },
     });
 
     if (!response.ok) {

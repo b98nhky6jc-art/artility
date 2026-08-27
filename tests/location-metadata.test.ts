@@ -4,7 +4,7 @@ import { getDistanceInMetres } from "../src/artworkDiscovery.ts";
 import { getArtworkDisplayTitle } from "../src/artworkDisplay.ts";
 import { getArtworkLocality } from "../shared/artwork-location.ts";
 import {
-  hasDuplicatedLocationMetadata,
+  needsLocationMetadataRefresh,
   refreshArtworkLocationMetadata,
   reverseGeocodeArtworkLocation,
 } from "../worker/location-metadata.ts";
@@ -72,18 +72,22 @@ test("metadata cleanup preserves correct coordinates while refreshing locality",
   );
 });
 
-test("duplicated legacy place fields are eligible for an automatic refresh", () => {
+test("missing or duplicated legacy place fields are eligible for an automatic refresh", () => {
   assert.equal(
-    hasDuplicatedLocationMetadata({ town: "Leeds", city: "Leeds" }),
+    needsLocationMetadataRefresh({ town: "Leeds", city: "Leeds" }),
     true,
   );
   assert.equal(
-    hasDuplicatedLocationMetadata({ town: null, city: "Leeds" }),
+    needsLocationMetadataRefresh({ town: null, city: "Leeds" }),
     false,
   );
   assert.equal(
-    hasDuplicatedLocationMetadata({ town: "Headingley", city: "Leeds" }),
+    needsLocationMetadataRefresh({ town: "Headingley", city: "Leeds" }),
     false,
+  );
+  assert.equal(
+    needsLocationMetadataRefresh({ town: null, city: null }),
+    true,
   );
 });
 

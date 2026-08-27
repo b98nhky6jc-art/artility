@@ -27,7 +27,7 @@ import {
   validateRoutePlanInput,
 } from "./routing.js";
 import {
-  hasDuplicatedLocationMetadata,
+  needsLocationMetadataRefresh,
   isValidArtworkCoordinates,
   refreshArtworkLocationMetadata,
   reverseGeocodeArtworkLocation,
@@ -88,15 +88,15 @@ type ArtworkLocationRecord = {
 };
 
 /**
- * Correct the duplicated locality fields left by earlier imports. This runs
- * on the server while serving the artwork, so people browsing the site never
- * need to identify or repair a bad place name themselves.
+ * Correct missing or duplicated locality fields left by earlier imports. This
+ * runs on the server while serving the artwork, so people browsing the site
+ * never need to identify or repair a bad place name themselves.
  */
 async function correctLegacyArtworkLocationMetadata(
   env: ArtilityEnv,
   artwork: ArtworkLocationRecord,
 ) {
-  if (!hasDuplicatedLocationMetadata(artwork)) {
+  if (!needsLocationMetadataRefresh(artwork)) {
     return artwork;
   }
 
@@ -122,7 +122,7 @@ async function correctLegacyArtworkLocationMetadata(
     .bind(refreshed.town, refreshed.city, artwork.id)
     .run();
 
-  console.info("Corrected duplicated artwork location metadata", {
+  console.info("Corrected artwork location metadata", {
     artworkId: artwork.id,
     latitude: artwork.latitude,
     longitude: artwork.longitude,
@@ -2719,7 +2719,7 @@ photos.created_at AS photo_added_at
 
       const artworks = [...result.results];
       const legacyArtworkIndex = artworks.findIndex((artwork) =>
-        hasDuplicatedLocationMetadata(artwork),
+        needsLocationMetadataRefresh(artwork),
       );
 
       // Correct one old imported record per listing request. This keeps the
