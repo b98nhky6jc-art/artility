@@ -9,7 +9,6 @@ import { canUserContribute } from "./emailVerification";
 import { formatInfrastructureType } from "../shared/infrastructure-types";
 import { useAdminAccess } from "./useModeratorAccess";
 import AddToWalkButton from "./AddToWalkButton";
-import HomeAreaSettings from "./HomeAreaSettings";
 
 type Find = {
   instagram_handle: string | null;
@@ -234,10 +233,6 @@ export default function MyFinds() {
               <p className="profile-privacy-hint">
                 Keep your public profile comfortable: don’t add an address, phone number or other sensitive details.
               </p>
-            )}
-
-            {session?.user && (
-              <HomeAreaSettings key={session.user.id} userId={session.user.id} />
             )}
 
             {session?.user && !canContribute && (

@@ -17,7 +17,6 @@ import {
 } from "./artworkDiscovery";
 import { formatInfrastructureType } from "../shared/infrastructure-types";
 import AddToWalkButton from "./AddToWalkButton";
-import { readHomeArea, type HomeArea } from "./homeAreaStorage";
 
 
 type Artwork = {
@@ -48,7 +47,6 @@ function App() {
   );
   const sortWasChosen = useRef(false);
   const { data: session } = authClient.useSession();
-  const [homeArea, setHomeArea] = useState<HomeArea | null>(null);
   const canContribute = canUserContribute(session?.user);
 
   useEffect(() => {
@@ -71,23 +69,21 @@ function App() {
 
     loadArtworks();
   }, []);
+
   useEffect(() => {
-    const userId = session?.user.id;
-    const updateHomeArea = () => setHomeArea(userId ? readHomeArea(userId) : null);
-    const timer = window.setTimeout(updateHomeArea, 0);
+    try {
+      const legacyKeys = Array.from(
+        { length: window.localStorage.length },
+        (_, index) => window.localStorage.key(index),
+      ).filter(
+        (key): key is string => key?.startsWith("artility-home-area:") ?? false,
+      );
 
-    if (userId) {
-      window.addEventListener("artility-home-area-updated", updateHomeArea);
+      legacyKeys.forEach((key) => window.localStorage.removeItem(key));
+    } catch {
+      // Storage cleanup is optional when a browser blocks local storage access.
     }
-
-    return () => {
-      window.clearTimeout(timer);
-
-      if (userId) {
-        window.removeEventListener("artility-home-area-updated", updateHomeArea);
-      }
-    };
-  }, [session?.user.id]);
+  }, []);
 
   useEffect(() => {
     let isCurrent = true;
@@ -134,7 +130,9 @@ function App() {
       <main className="page-main home-main">
         <section className="page-panel hero" id="map">
           <div className="hero-copy">
-            <span className="location-pill">📍 {homeArea?.town || homeArea?.city || "Leeds"}</span>
+            <span className="location-pill">
+              📍 {userLocation ? "Your location" : "Explore the map"}
+            </span>
 
             <h2>
               Find the art
@@ -156,7 +154,11 @@ function App() {
           </div>
 
           <div className="map-wrapper" id="home-map">
-            <ArtworkMap artworks={artworks} homeArea={homeArea} preserveHomeCenter />
+            <ArtworkMap
+              artworks={artworks}
+              userLocation={userLocation}
+              preserveUserLocation={Boolean(userLocation)}
+            />
           </div>
         </section>
 

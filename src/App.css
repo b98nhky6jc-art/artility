@@ -53,7 +53,7 @@ main {
   width: 100%;
   max-width: none;
   margin: 0 auto;
-  padding: 0 var(--content-gutter) 88px;
+  padding: 0 var(--content-gutter) 64px;
 }
 
 .page-main {
@@ -851,6 +851,12 @@ main {
   flex: 1;
 }
 
+.detail-main {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
 .detail-header {
   width: 100%;
   max-width: none;
@@ -914,7 +920,14 @@ main {
 }
 
 .detail-info {
-  padding: 20px 0;
+  padding: 8px 0;
+}
+
+.detail-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.95fr);
+  align-items: start;
+  gap: clamp(24px, 3vw, 40px);
 }
 
 .detail-info h1,
@@ -923,7 +936,7 @@ main {
 }
 
 .detail-map-section {
-  margin-top: var(--section-gap);
+  margin-top: clamp(32px, 4vw, 48px);
 }
 
 .detail-map-section > div:first-child {
@@ -950,8 +963,8 @@ main {
    ========================================================= */
 
 .artwork-activity {
-  margin: 1.5rem 0;
-  padding: 1.25rem 1.5rem;
+  margin: 20px 0;
+  padding: 16px 18px;
 
   border: 1px solid var(--soft-line);
   border-radius: var(--radius-medium);
@@ -984,8 +997,8 @@ main {
   width: 100%;
   max-width: 460px;
 
-  margin: 16px auto 10px;
-  padding: 14px 18px;
+  margin: 14px auto 8px;
+  padding: 12px 16px;
 
   border-radius: 16px;
 
@@ -1026,8 +1039,8 @@ main {
   width: 100%;
   max-width: 460px;
 
-  margin: 18px auto 0;
-  padding: 16px 24px;
+  margin: 10px auto 0;
+  padding: 14px 22px;
 
   border: 0;
   border-radius: var(--radius-pill);
@@ -1111,7 +1124,7 @@ main {
 }
 
 .detail-management-actions {
-  margin: 12px 0 18px;
+  margin: 10px 0 14px;
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -1319,79 +1332,11 @@ main {
 .community-safety-notice strong { color: var(--ink); font-size: 13px; }
 .community-safety-notice p { margin: 1px 0 0; color: inherit; }
 .community-safety-notice-upload { max-width: 720px; margin: 12px auto 0; text-align: left; }
-.home-area-settings {
-  max-width: 680px;
-  margin-top: 28px;
-  padding-top: 24px;
-  border-top: 1px solid var(--soft-line);
-  text-align: left;
-}
-
-.home-area-heading h2 {
-  margin: 0;
-  color: var(--ink);
-  font-size: 23px;
-  line-height: 1.15;
-}
-
-.home-area-heading p {
-  margin: 6px 0 0;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.45;
-}
-
-.home-area-field {
-  display: grid;
-  max-width: 460px;
-  gap: 6px;
-  margin-top: 18px;
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.home-area-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 14px;
-}
-
-.home-area-actions .secondary-button {
-  color: var(--ink);
-  border-color: var(--line);
-  box-shadow: none;
-  text-decoration: none;
-}
-
-.home-area-actions .home-location-button,
-.home-area-actions .home-location-button:hover {
-  transform: none;
-}
-
-.home-area-message {
-  margin: 10px 0 0;
-  color: var(--teal-strong);
-  font-size: 14px;
-}
-
-@media (max-width: 620px) {
-  .home-area-actions {
-    flex-direction: column;
-  }
-
-  .home-area-actions .primary-button,
-  .home-area-actions .secondary-button {
-    width: 100%;
-    text-align: center;
-  }
-}
 
 .status-history-panel,
 .report-status-panel {
   min-width: 0;
-  padding: clamp(26px, 3vw, 42px);
+  padding: clamp(24px, 2.6vw, 34px);
   border-radius: var(--radius-large);
   background: var(--paper);
   box-shadow: 0 12px 32px var(--shadow-soft);
@@ -1884,7 +1829,7 @@ main {
 }
 
 .collection-section {
-  padding-bottom: var(--section-gap);
+  padding-bottom: 32px;
 }
 
 .empty-collection {
@@ -3130,7 +3075,7 @@ main {
 }
 
 .art-walk-hero {
-  min-height: 310px;
+  min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -4006,7 +3951,7 @@ main {
    ========================================================= */
 
 .contact-panel {
-  min-height: 560px;
+  min-height: 0;
   background: var(--panel-contact);
   border: 0;
 }
@@ -4024,7 +3969,7 @@ main {
 .contact-intro {
   max-width: 620px;
 
-  margin: 0 auto 44px;
+  margin: 0 auto 28px;
 
   font-size: 17px;
   line-height: 1.6;

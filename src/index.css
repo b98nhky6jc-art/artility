@@ -87,8 +87,8 @@
   --page-width: 1760px;
   --frame-width: min(94vw, var(--page-width));
   --content-gutter: clamp(24px, 2.6vw, 44px);
-  --panel-padding: clamp(38px, 3.8vw, 68px);
-  --section-gap: clamp(44px, 5vw, 76px);
+  --panel-padding: clamp(28px, 3vw, 48px);
+  --section-gap: clamp(32px, 4vw, 48px);
   --page-title-size: clamp(54px, 6vw, 88px);
 
   /* Base document aliases */

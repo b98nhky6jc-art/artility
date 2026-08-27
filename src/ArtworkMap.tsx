@@ -15,8 +15,8 @@ type Props = {
   artworks: Artwork[];
   numberedStops?: boolean;
   routeGeometry?: RouteLineString | null;
-  homeArea?: { latitude: number; longitude: number } | null;
-  preserveHomeCenter?: boolean;
+  userLocation?: { latitude: number; longitude: number } | null;
+  preserveUserLocation?: boolean;
 };
 
 export type RouteLineString = {
@@ -26,13 +26,58 @@ export type RouteLineString = {
 
 const ROUTE_SOURCE_ID = "art-walk-route";
 const ROUTE_LAYER_ID = "art-walk-route-line";
+const LAST_MAP_VIEWPORT_KEY = "artility:last-map-viewport";
+
+type MapViewport = {
+  center: [number, number];
+  zoom: number;
+};
+
+function readLastMapViewport(): MapViewport | null {
+  try {
+    const stored = window.localStorage.getItem(LAST_MAP_VIEWPORT_KEY);
+    const viewport = stored ? (JSON.parse(stored) as Partial<MapViewport>) : null;
+    const longitude = viewport?.center?.[0];
+    const latitude = viewport?.center?.[1];
+
+    if (
+      !viewport ||
+      typeof longitude !== "number" ||
+      typeof latitude !== "number" ||
+      typeof viewport.zoom !== "number" ||
+      !Number.isFinite(longitude) ||
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(viewport.zoom)
+    ) {
+      return null;
+    }
+
+    return {
+      center: [longitude, latitude],
+      zoom: viewport.zoom,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveLastMapViewport(center: [number, number], zoom: number) {
+  try {
+    window.localStorage.setItem(
+      LAST_MAP_VIEWPORT_KEY,
+      JSON.stringify({ center, zoom }),
+    );
+  } catch {
+    // The map remains usable when local storage is unavailable.
+  }
+}
 
 export default function ArtworkMap({
   artworks,
   numberedStops = false,
   routeGeometry = null,
-  homeArea = null,
-  preserveHomeCenter = false,
+  userLocation = null,
+  preserveUserLocation = false,
 }: Props) {
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -43,11 +88,12 @@ export default function ArtworkMap({
       return;
     }
 
+    const savedViewport = readLastMapViewport();
     const map = new maplibregl.Map({
       container: mapContainer.current,
       style: "https://tiles.openfreemap.org/styles/liberty",
-      center: [-1.54, 53.83],
-      zoom: 12,
+      center: savedViewport?.center ?? [-1.54, 53.83],
+      zoom: savedViewport?.zoom ?? 12,
     });
 
     map.addControl(new maplibregl.NavigationControl(), "top-right");
@@ -63,6 +109,11 @@ export default function ArtworkMap({
 
     map.addControl(geolocate, "top-right");
 
+    map.on("moveend", () => {
+      const center = map.getCenter();
+      saveLastMapViewport([center.lng, center.lat], map.getZoom());
+    });
+
     mapRef.current = map;
 
     return () => {
@@ -73,7 +124,14 @@ export default function ArtworkMap({
       mapRef.current = null;
     };
   }, []);
-  useEffect(() => { if (mapRef.current && homeArea) mapRef.current.jumpTo({ center: [homeArea.longitude, homeArea.latitude], zoom: 12 }); }, [homeArea]);
+  useEffect(() => {
+    if (mapRef.current && userLocation) {
+      mapRef.current.jumpTo({
+        center: [userLocation.longitude, userLocation.latitude],
+        zoom: 12,
+      });
+    }
+  }, [userLocation]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -130,7 +188,7 @@ export default function ArtworkMap({
       markersRef.current.push(marker);
     });
 
-    if (!bounds.isEmpty() && !preserveHomeCenter) {
+    if (!bounds.isEmpty() && !preserveUserLocation) {
       if (artworks.length === 1) {
         const artwork = artworks[0];
 
@@ -146,7 +204,7 @@ export default function ArtworkMap({
         });
       }
     }
-  }, [artworks, numberedStops, preserveHomeCenter]);
+  }, [artworks, numberedStops, preserveUserLocation]);
 
   useEffect(() => {
     const map = mapRef.current;
