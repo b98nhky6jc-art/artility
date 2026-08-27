@@ -17,6 +17,7 @@ import {
 } from "./artworkDiscovery";
 import { formatInfrastructureType } from "../shared/infrastructure-types";
 import AddToWalkButton from "./AddToWalkButton";
+import { homeAreaKey, type HomeArea } from "./HomeAreaSettings";
 
 
 type Artwork = {
@@ -47,6 +48,7 @@ function App() {
   );
   const sortWasChosen = useRef(false);
   const { data: session } = authClient.useSession();
+  const [homeArea, setHomeArea] = useState<HomeArea | null>(null);
   const canContribute = canUserContribute(session?.user);
 
   useEffect(() => {
@@ -69,6 +71,7 @@ function App() {
 
     loadArtworks();
   }, []);
+  useEffect(() => { if (session?.user.id) { const saved = localStorage.getItem(homeAreaKey(session.user.id)); if (saved) setHomeArea(JSON.parse(saved) as HomeArea); } }, [session?.user.id]);
 
   useEffect(() => {
     let isCurrent = true;
@@ -115,7 +118,7 @@ function App() {
       <main className="page-main home-main">
         <section className="page-panel hero" id="map">
           <div className="hero-copy">
-            <span className="location-pill">📍 Leeds</span>
+            <span className="location-pill">📍 {homeArea?.town || homeArea?.city || "Leeds"}</span>
 
             <h2>
               Find the art
@@ -136,7 +139,7 @@ function App() {
           </div>
 
           <div className="map-wrapper" id="home-map">
-            <ArtworkMap artworks={artworks} />
+            <ArtworkMap artworks={artworks} homeArea={homeArea} preserveHomeCenter />
           </div>
         </section>
 

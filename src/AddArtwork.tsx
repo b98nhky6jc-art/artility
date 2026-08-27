@@ -8,6 +8,7 @@ import { authClient } from "./lib/auth-client";
 import EmailVerificationNotice from "./EmailVerificationNotice";
 import { canUserContribute } from "./emailVerification";
 import ArtistAutocomplete from "./ArtistAutocomplete";
+import CommunitySafetyNotice from "./CommunitySafetyNotice";
 import {
   INFRASTRUCTURE_TYPES,
   type InfrastructureType,
@@ -585,6 +586,7 @@ export default function AddArtwork() {
                 Upload up to {MAX_PHOTOS_PER_ARTWORK} photos and we’ll pull out whatever useful information we can.
 
               </p>
+              <CommunitySafetyNotice context="upload" />
 
               <label
                 className="photo-upload"

@@ -15,6 +15,8 @@ type Props = {
   artworks: Artwork[];
   numberedStops?: boolean;
   routeGeometry?: RouteLineString | null;
+  homeArea?: { latitude: number; longitude: number } | null;
+  preserveHomeCenter?: boolean;
 };
 
 export type RouteLineString = {
@@ -29,6 +31,8 @@ export default function ArtworkMap({
   artworks,
   numberedStops = false,
   routeGeometry = null,
+  homeArea = null,
+  preserveHomeCenter = false,
 }: Props) {
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -69,6 +73,7 @@ export default function ArtworkMap({
       mapRef.current = null;
     };
   }, []);
+  useEffect(() => { if (mapRef.current && homeArea) mapRef.current.jumpTo({ center: [homeArea.longitude, homeArea.latitude], zoom: 12 }); }, [homeArea]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -125,7 +130,7 @@ export default function ArtworkMap({
       markersRef.current.push(marker);
     });
 
-    if (!bounds.isEmpty()) {
+    if (!bounds.isEmpty() && !preserveHomeCenter) {
       if (artworks.length === 1) {
         const artwork = artworks[0];
 
@@ -141,7 +146,7 @@ export default function ArtworkMap({
         });
       }
     }
-  }, [artworks, numberedStops]);
+  }, [artworks, numberedStops, preserveHomeCenter]);
 
   useEffect(() => {
     const map = mapRef.current;

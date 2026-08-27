@@ -9,6 +9,8 @@ import { canUserContribute } from "./emailVerification";
 import { formatInfrastructureType } from "../shared/infrastructure-types";
 import { useAdminAccess } from "./useModeratorAccess";
 import AddToWalkButton from "./AddToWalkButton";
+import CommunitySafetyNotice from "./CommunitySafetyNotice";
+import HomeAreaSettings from "./HomeAreaSettings";
 
 type Find = {
   instagram_handle: string | null;
@@ -172,6 +174,7 @@ export default function MyFinds() {
             <span className="eyebrow">PROFILE</span>
             <h1>My Finds</h1>
             <p>A growing collection of public art you've found in the wild.</p>
+            {session?.user && <CommunitySafetyNotice context="profile" />}
             {session?.user && (
               <div className="profile-user">
                 <span>
@@ -236,6 +239,8 @@ export default function MyFinds() {
             </div>
           )}
         </section>
+
+        {session?.user && <HomeAreaSettings userId={session.user.id} />}
 
         {isAdmin && (
           <section className="page-panel admin-profile-overview">

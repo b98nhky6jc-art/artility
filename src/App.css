@@ -1296,13 +1296,20 @@ main {
 }
 
 .status-report-section {
-  margin-top: var(--section-gap);
+  margin-top: clamp(28px, 3vw, 44px);
   display: grid;
   grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.92fr);
   gap: clamp(22px, 2.6vw, 40px);
   align-items: stretch;
   text-align: left;
 }
+
+.community-safety-notice { margin: 18px 0 0; padding: 14px 16px; border: 1px solid var(--soft-line); border-radius: var(--radius-medium); background: var(--soft-yellow); color: var(--ink); font-size: 14px; line-height: 1.5; }
+.community-safety-notice p { margin: 4px 0 0; color: inherit; }
+.home-area-settings { margin: 0 0 32px; text-align: left; }
+.home-area-settings h2 { margin: 8px 0; }
+.home-area-settings form { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.home-area-settings input { flex: 1 1 170px; }
 
 .status-history-panel,
 .report-status-panel {
