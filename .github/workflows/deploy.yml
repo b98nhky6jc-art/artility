@@ -12,6 +12,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -25,12 +27,20 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Apply database migrations
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: d1 migrations apply box-app-db --remote
+      # The current GitHub Cloudflare token can deploy Workers but does not
+      # have D1 query permission. Fail safely instead of deploying code that
+      # depends on a migration that GitHub cannot apply. Migrations must be
+      # applied by an authenticated operator before the code-only follow-up
+      # commit until the token is replaced with one that has D1 Edit access.
+      - name: Guard database migrations
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          if git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA" | grep -q '^migrations/'; then
+            echo "::error::Database migrations require manual application before deployment because the GitHub Cloudflare token lacks D1 Edit access."
+            exit 1
+          fi
 
       - name: Deploy to Cloudflare
         uses: cloudflare/wrangler-action@v3
