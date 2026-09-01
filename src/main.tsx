@@ -19,11 +19,17 @@ import Moderation from "./Moderation.tsx";
 import ArtWalk from "./ArtWalk.tsx";
 import ArtWalkTray from "./ArtWalkTray.tsx";
 import { ArtWalkProvider } from "./ArtWalkContext.tsx";
+import SiteFooter from "./SiteFooter.tsx";
+import Faq from "./Faq.tsx";
+import Privacy from "./Privacy.tsx";
+import Copyright from "./Copyright.tsx";
+import ScrollToTop from "./ScrollToTop.tsx";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
       <ArtWalkProvider>
+        <ScrollToTop />
         <SiteHeader />
 
         <Routes>
@@ -35,6 +41,9 @@ createRoot(document.getElementById("root")!).render(
           <Route path="/my-finds" element={<MyFinds />} />
           <Route path="/add-artwork" element={<AddArtwork />} />
           <Route path="/contact" element={<Contact />} />
+          <Route path="/faq" element={<Faq />} />
+          <Route path="/privacy" element={<Privacy />} />
+          <Route path="/copyright" element={<Copyright />} />
           <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/artists" element={<Artists />} />
           <Route path="/artist/:id" element={<ArtistDetail />} />
@@ -42,6 +51,7 @@ createRoot(document.getElementById("root")!).render(
         </Routes>
 
         <ArtWalkTray />
+        <SiteFooter />
         <MobileNav />
       </ArtWalkProvider>
     </BrowserRouter>

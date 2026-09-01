@@ -55,6 +55,12 @@ type ArtworkPhotoModerationCase = {
     width: number | null;
     height: number | null;
     byte_size: number | null;
+    validity_state: "approved" | "manual_review" | "rejected" | null;
+    validity_provider: string | null;
+    validity_model: string | null;
+    validity_reason: string | null;
+    validity_result: string | null;
+    validity_error: string | null;
   };
 };
 
@@ -153,6 +159,34 @@ function getFlaggedCategories(
   }
 }
 
+function getValiditySummary(
+  value: string | null,
+  state: ArtworkPhotoModerationCase["payload"]["validity_state"],
+) {
+  if (!value) {
+    return state ? formatStatusLabel(state) : "Not run";
+  }
+
+  try {
+    const result = JSON.parse(value) as {
+      classification?: string;
+      confidence?: number;
+    };
+    const label = result.classification
+      ? formatStatusLabel(result.classification)
+      : state
+        ? formatStatusLabel(state)
+        : "Result unavailable";
+    const confidence = Number.isFinite(result.confidence)
+      ? ` · ${Math.round(Number(result.confidence) * 100)}% confidence`
+      : "";
+
+    return `${label}${confidence}`;
+  } catch {
+    return "Could not read result";
+  }
+}
+
 function ModerationCaseCard({
   item,
   reviewing,
@@ -245,6 +279,18 @@ function ModerationCaseCard({
                   </dd>
                 </div>
                 <div>
+                  <dt>Artwork validity</dt>
+                  <dd>
+                    {getValiditySummary(
+                      item.payload.validity_result,
+                      item.payload.validity_state,
+                    )}
+                    {item.payload.validity_model && (
+                      <small>{item.payload.validity_model}</small>
+                    )}
+                  </dd>
+                </div>
+                <div>
                   <dt>Normalized image</dt>
                   <dd>
                     {item.payload.width && item.payload.height
@@ -272,7 +318,10 @@ function ModerationCaseCard({
                 <strong>Why this needs review</strong>
                 <p>{item.payload.reason || "No reason was supplied."}</p>
                 {item.payload.moderation_error && (
-                  <p>Provider error: {item.payload.moderation_error}</p>
+                  <p>Safety provider error: {item.payload.moderation_error}</p>
+                )}
+                {item.payload.validity_error && (
+                  <p>Validity provider error: {item.payload.validity_error}</p>
                 )}
               </div>
             </>

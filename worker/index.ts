@@ -13,6 +13,10 @@ import {
   moderateImage,
   type ImageModerationDecision,
 } from "./image-moderation.js";
+import {
+  assessPublicArtwork,
+  type ArtworkValidityDecision,
+} from "./artwork-validity.js";
 import { normaliseInfrastructureType } from "../shared/infrastructure-types.js";
 import {
   isUnknownArtistName,
@@ -301,9 +305,22 @@ async function publishArtworkPhoto(
   reviewedBy: string | null = null,
 ) {
   const photo = await env.DB.prepare(`
-    SELECT id, artwork_id, storage_key, thumbnail_key, moderation_state
+    SELECT
+      photos.id,
+      photos.artwork_id,
+      photos.storage_key,
+      photos.thumbnail_key,
+      photos.moderation_state,
+      artworks.added_by,
+      EXISTS (
+        SELECT 1
+        FROM photos AS approved_photo
+        WHERE approved_photo.artwork_id = photos.artwork_id
+          AND approved_photo.moderation_state = 'approved'
+      ) AS already_public
     FROM photos
-    WHERE id = ?
+    INNER JOIN artworks ON artworks.id = photos.artwork_id
+    WHERE photos.id = ?
     LIMIT 1
   `)
     .bind(photoId)
@@ -313,6 +330,8 @@ async function publishArtworkPhoto(
       storage_key: string;
       thumbnail_key: string | null;
       moderation_state: ArtworkPhotoModerationState;
+      added_by: string | null;
+      already_public: number;
     }>();
 
   if (!photo) {
@@ -376,7 +395,101 @@ async function publishArtworkPhoto(
   ]);
   await ensureApprovedPrimaryPhoto(env, photo.artwork_id);
 
+  // A newly submitted artwork becomes a find at the exact moment its first
+  // valid photo is published. Keeping this here covers automated approval,
+  // scheduled retries and administrator approval without affecting photos
+  // appended to artwork that was already public.
+  if (!photo.already_public && photo.added_by) {
+    await env.DB.prepare(`
+      INSERT OR IGNORE INTO checkins (artwork_id, user_id)
+      VALUES (?, ?)
+    `)
+      .bind(photo.artwork_id, photo.added_by)
+      .run();
+  }
+
   return { ...photo, storage_key: publicKey, thumbnail_key: publicThumbnailKey };
+}
+
+function storedValidityState(
+  outcome: ArtworkValidityDecision["outcome"],
+): Exclude<ArtworkPhotoModerationState, "pending"> {
+  if (outcome === "approve") {
+    return "approved";
+  }
+
+  return outcome === "reject" ? "rejected" : "manual_review";
+}
+
+async function assessAndStoreArtworkValidity(
+  env: Env,
+  photoId: number,
+  image: PreparedImage,
+) {
+  const artwork = await env.DB.prepare(`
+    SELECT
+      artworks.infrastructure_type,
+      artworks.town,
+      artworks.city
+    FROM photos
+    INNER JOIN artworks ON artworks.id = photos.artwork_id
+    WHERE photos.id = ?
+    LIMIT 1
+  `)
+    .bind(photoId)
+    .first<{
+      infrastructure_type: string | null;
+      town: string | null;
+      city: string | null;
+    }>();
+
+  if (!artwork) {
+    throw new Error("Artwork was not found for the public-art check");
+  }
+
+  const decision = await assessPublicArtwork(env.OPENAI_API_KEY, image, {
+    infrastructureType: artwork.infrastructure_type,
+    town: artwork.town,
+    city: artwork.city,
+  });
+  const state = storedValidityState(decision.outcome);
+
+  await env.DB.prepare(`
+    INSERT INTO photo_validity_assessments (
+      photo_id,
+      state,
+      provider,
+      model,
+      request_id,
+      reason,
+      result_json,
+      error,
+      assessed_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(photo_id) DO UPDATE SET
+      state = excluded.state,
+      provider = excluded.provider,
+      model = excluded.model,
+      request_id = excluded.request_id,
+      reason = excluded.reason,
+      result_json = excluded.result_json,
+      error = excluded.error,
+      assessed_at = CURRENT_TIMESTAMP
+  `)
+    .bind(
+      photoId,
+      state,
+      decision.provider,
+      decision.model,
+      decision.requestId,
+      decision.reason,
+      JSON.stringify(decision.result ?? {}),
+      decision.error,
+    )
+    .run();
+
+  return { decision, state };
 }
 
 async function applyImageModerationDecision(
@@ -384,6 +497,7 @@ async function applyImageModerationDecision(
   photoId: number,
   decision: ImageModerationDecision,
   previousAttemptCount: number,
+  image: PreparedImage,
 ) {
   const attemptCount = previousAttemptCount + 1;
   const finalDecision: ImageModerationDecision =
@@ -433,6 +547,32 @@ async function applyImageModerationDecision(
       id: photoId,
       state,
       providerRetry: decision.outcome === "retry",
+    };
+  }
+
+  const validity = await assessAndStoreArtworkValidity(env, photoId, image);
+
+  if (validity.decision.outcome !== "approve") {
+    const validityUpdate = await env.DB.prepare(`
+      UPDATE photos
+      SET moderation_state = ?
+      WHERE id = ?
+        AND moderation_state = 'pending'
+    `)
+      .bind(
+        validity.state,
+        photoId,
+      )
+      .run();
+
+    if (Number(validityUpdate.meta.changes ?? 0) !== 1) {
+      throw new Error("This image changed state during the public-art check");
+    }
+
+    return {
+      id: photoId,
+      state: validity.state,
+      providerRetry: false,
     };
   }
 
@@ -531,7 +671,7 @@ async function quarantineAndModerateArtworkPhoto(
 
   const decision = await moderateImage(env.OPENAI_API_KEY, image);
 
-  return applyImageModerationDecision(env, photoId, decision, 0);
+  return applyImageModerationDecision(env, photoId, decision, 0, image);
 }
 
 export async function retryPendingImageModeration(env: Env) {
@@ -610,6 +750,14 @@ export async function retryPendingImageModeration(env: Env) {
     result.checked += 1;
     let thumbnail: R2ObjectBody | null = null;
     let decision: ImageModerationDecision | null = null;
+    let retryImage: PreparedImage = {
+      bytes: new Uint8Array(),
+      thumbnailBytes: new Uint8Array(),
+      sourceMimeType: candidate.stored_mime_type ?? "image/jpeg",
+      storedMimeType: "image/jpeg",
+      width: candidate.width ?? 1,
+      height: candidate.height ?? 1,
+    };
 
     try {
       thumbnail = candidate.thumbnail_key
@@ -646,10 +794,10 @@ export async function retryPendingImageModeration(env: Env) {
       };
     } else if (!decision && thumbnail) {
       const thumbnailBytes = new Uint8Array(await thumbnail.arrayBuffer());
-      const retryImage: PreparedImage = {
+      retryImage = {
         bytes: thumbnailBytes,
         thumbnailBytes,
-        sourceMimeType: "image/jpeg",
+        sourceMimeType: candidate.stored_mime_type ?? "image/jpeg",
         storedMimeType: "image/jpeg",
         width: candidate.width ?? 1,
         height: candidate.height ?? 1,
@@ -667,6 +815,7 @@ export async function retryPendingImageModeration(env: Env) {
       candidate.id,
       decision,
       candidate.moderation_attempt_count,
+      retryImage,
     );
 
     if (applied.state === "approved") {
@@ -1670,6 +1819,12 @@ export default {
             photos.height,
             photos.byte_size,
             photos.created_at,
+            validity.state AS validity_state,
+            validity.provider AS validity_provider,
+            validity.model AS validity_model,
+            validity.reason AS validity_reason,
+            validity.result_json AS validity_result,
+            validity.error AS validity_error,
             artworks.title AS artwork_title,
             artworks.town AS artwork_town,
             artworks.city AS artwork_city,
@@ -1683,6 +1838,8 @@ export default {
             ON effective_status.artwork_id = artworks.id
           LEFT JOIN "user" AS uploader
             ON uploader.id = photos.uploaded_by
+          LEFT JOIN photo_validity_assessments AS validity
+            ON validity.photo_id = photos.id
           WHERE photos.moderation_state = 'manual_review'
           ORDER BY photos.created_at ASC, photos.id ASC
         `).all<{
@@ -1702,6 +1859,12 @@ export default {
           height: number | null;
           byte_size: number | null;
           created_at: string;
+          validity_state: "approved" | "manual_review" | "rejected" | null;
+          validity_provider: string | null;
+          validity_model: string | null;
+          validity_reason: string | null;
+          validity_result: string | null;
+          validity_error: string | null;
           artwork_title: string | null;
           artwork_town: string | null;
           artwork_city: string | null;
@@ -1731,7 +1894,7 @@ export default {
             },
             payload: {
               photo_id: photo.id,
-              reason: photo.moderation_reason,
+              reason: photo.validity_reason ?? photo.moderation_reason,
               provider: photo.moderation_provider,
               model: photo.moderation_model,
               categories: photo.moderation_categories,
@@ -1742,6 +1905,12 @@ export default {
               width: photo.width,
               height: photo.height,
               byte_size: photo.byte_size,
+              validity_state: photo.validity_state,
+              validity_provider: photo.validity_provider,
+              validity_model: photo.validity_model,
+              validity_reason: photo.validity_reason,
+              validity_result: photo.validity_result,
+              validity_error: photo.validity_error,
             },
           })),
         );

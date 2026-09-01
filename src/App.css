@@ -89,6 +89,114 @@ main {
   gap: 24px;
 }
 
+.site-footer {
+  width: 100%;
+  margin-top: auto;
+  padding: 24px var(--content-gutter) 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid var(--soft-line);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.site-footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.site-footer a {
+  color: var(--ink);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.site-footer a:hover,
+.information-list a:hover {
+  text-decoration: underline;
+}
+
+.site-footer p {
+  margin: 0;
+}
+
+.information-panel {
+  max-width: 860px;
+  margin: 0 auto;
+  text-align: left;
+}
+
+.information-panel > .back-link {
+  display: flex;
+  width: fit-content;
+  margin-bottom: 34px;
+}
+
+.information-panel > h1 {
+  max-width: 100%;
+  margin: 0 0 36px;
+  font-size: clamp(44px, 5vw, 68px);
+  line-height: 1.02;
+  letter-spacing: -2.5px;
+}
+
+.information-updated {
+  margin: -26px 0 36px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.information-list {
+  display: grid;
+  gap: 24px;
+}
+
+.information-list h2 {
+  margin: 0 0 6px;
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.information-list p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.information-list p + p {
+  margin-top: 10px;
+}
+
+.information-list a {
+  color: var(--accent-link);
+  font-weight: 700;
+}
+
+@media (max-width: 620px) {
+  .site-footer {
+    padding-bottom: 110px;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .information-panel > .back-link {
+    margin-bottom: 26px;
+  }
+
+  .information-panel > h1 {
+    margin-bottom: 30px;
+    font-size: clamp(38px, 12vw, 52px);
+    letter-spacing: -1.8px;
+  }
+
+  .information-updated {
+    margin-top: -22px;
+    margin-bottom: 30px;
+  }
+}
+
 .brand-lockup {
   display: flex;
   flex-direction: column;
@@ -288,9 +396,9 @@ main {
 
 .secondary-button {
   background: transparent;
-  color: var(--on-dark);
+  color: var(--ink);
 
-  border: 1px solid var(--dark-border);
+  border: 1px solid var(--line);
   box-shadow: 0 3px 0 rgba(37, 19, 15, 0.16);
 }
 

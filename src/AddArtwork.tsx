@@ -1025,11 +1025,12 @@ export default function AddArtwork() {
                   </>
                 ) : (
                   <>
-                    <h2>The uploaded image did not pass the safety check.</h2>
+                    <h2>The uploaded image did not pass Artility’s image checks.</h2>
                     <p>
                       Neither the image nor this artwork is visible anywhere
-                      on Artility. You can try again with a different, clear
-                      photo or contact us if you think this was a mistake.
+                      on Artility. Please try again with a clear, real-world
+                      photo of public art in its physical setting, or contact
+                      us if you think this was a mistake.
                     </p>
                   </>
                 )}

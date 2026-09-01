@@ -3,7 +3,6 @@ import { Link, useNavigate } from "react-router";
 import { authClient } from "./lib/auth-client";
 import CommunitySafetyNotice from "./CommunitySafetyNotice";
 import "./App.css";
-import CommunitySafetyNotice from "./CommunitySafetyNotice";
 
 export default function Signup() {
   const navigate = useNavigate();
