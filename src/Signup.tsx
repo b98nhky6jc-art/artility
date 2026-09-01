@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router";
 import { authClient } from "./lib/auth-client";
 import CommunitySafetyNotice from "./CommunitySafetyNotice";
 import "./App.css";
+import CommunitySafetyNotice from "./CommunitySafetyNotice";
 
 export default function Signup() {
   const navigate = useNavigate();
@@ -63,6 +64,7 @@ export default function Signup() {
         email: email.trim(),
         password,
         name: displayName.trim(),
+        callbackURL: "/verify-email",
       });
 
       if (result.error) {
@@ -70,7 +72,7 @@ export default function Signup() {
         return;
       }
 
-      navigate("/");
+      navigate("/verify-email");
     } catch (error) {
       console.error(error);
       setError("Could not create account.");
@@ -85,8 +87,6 @@ export default function Signup() {
         <Link to="/" className="back-link">
           ← Back to map
         </Link>
-
-        <span className="detail-number">Create account</span>
       </header>
 
       <main className="detail-main">

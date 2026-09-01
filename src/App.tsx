@@ -1,10 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import "./App.css";
 import ArtworkMap from "./ArtworkMap";
 import { authClient } from "./lib/auth-client";
-import { getArtworkDisplayTitle } from "./artworkDisplay";
-import ArtistAttribution from "./ArtistAttribution";
+import EmailVerificationNotice from "./EmailVerificationNotice";
+import { canUserContribute } from "./emailVerification";
+import {
+  ARTWORK_PAGE_SIZE,
+  formatDistance,
+  requestBrowserLocation,
+  sortArtworks,
+  type ArtworkSort,
+  type UserLocation,
+} from "./artworkDiscovery";
+import AddToWalkButton from "./AddToWalkButton";
 
 
 type Artwork = {
@@ -20,24 +29,26 @@ type Artwork = {
   artist_name: string | null;
   instagram_handle: string | null;
   primary_photo: string | null;
-  photo_count: number;
   artist_id: number | null;
+  created_at: string | null;
 };
 
-type HomeArea = {
-  town: string;
-  city: string;
-  latitude: number;
-  longitude: number;
-};
+function getDiscoveryArtworkTitle(artwork: Artwork) {
+  return artwork.title?.trim() || "Untitled artwork";
+}
 
 function App() {
   const [artworks, setArtworks] = useState<Artwork[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [homeArea, setHomeArea] = useState<HomeArea | null>(null);
+  const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
+  const [artworkSort, setArtworkSort] = useState<ArtworkSort>("newest");
+  const [visibleArtworkCount, setVisibleArtworkCount] = useState(
+    ARTWORK_PAGE_SIZE,
+  );
+  const sortWasChosen = useRef(false);
   const { data: session } = authClient.useSession();
-  const sessionUserId = session?.user?.id;
+  const canContribute = canUserContribute(session?.user);
 
   useEffect(() => {
     async function loadArtworks() {
@@ -61,74 +72,68 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!sessionUserId) return;
+    try {
+      const legacyKeys = Array.from(
+        { length: window.localStorage.length },
+        (_, index) => window.localStorage.key(index),
+      ).filter(
+        (key): key is string => key?.startsWith("artility-home-area:") ?? false,
+      );
 
-    async function loadHomeArea() {
-      const response = await fetch("/api/profile/home-area");
-
-      if (response.ok) {
-        setHomeArea((await response.json()) as HomeArea | null);
-      }
+      legacyKeys.forEach((key) => window.localStorage.removeItem(key));
+    } catch {
+      // Storage cleanup is optional when a browser blocks local storage access.
     }
+  }, []);
 
-    void loadHomeArea();
-  }, [sessionUserId]);
+  useEffect(() => {
+    let isCurrent = true;
 
-  const homeLabel = homeArea?.town || homeArea?.city || "Leeds";
+    void requestBrowserLocation().then((location) => {
+      if (isCurrent && location) {
+        setUserLocation(location);
+        if (!sortWasChosen.current) {
+          setArtworkSort("closest");
+          setVisibleArtworkCount(ARTWORK_PAGE_SIZE);
+        }
+      }
+    });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, []);
+
+  const { sortedArtworks, artworkDistances } = useMemo(
+    () => sortArtworks(artworks, userLocation, artworkSort),
+    [artworks, artworkSort, userLocation],
+  );
+
+  const visibleArtworks = sortedArtworks.slice(0, visibleArtworkCount);
+  const hasMoreArtworks = visibleArtworkCount < sortedArtworks.length;
+
+  function handleArtworkSortChange(
+    event: React.ChangeEvent<HTMLSelectElement>,
+  ) {
+    sortWasChosen.current = true;
+    setArtworkSort(event.target.value as ArtworkSort);
+    setVisibleArtworkCount(ARTWORK_PAGE_SIZE);
+  }
 
   return (
     <div className="app">
-      <header className="topbar">
-        <Link to="/" className="brand-lockup">
-          <span className="eyebrow">ART HIDING IN PLAIN SIGHT</span>
-          <div className="brand-row">
-            <span className="brand-name">Artility</span>
-            <span className="beta-badge">BETA</span>
-          </div>
-        </Link>
+      {session?.user && !canContribute && (
+        <div className="page-verification-banner">
+          <EmailVerificationNotice email={session.user.email} compact />
+        </div>
+      )}
 
-        <nav className="desktop-nav" aria-label="Primary navigation">
-          <a href="#nearby" className="nav-link">
-            Explore
-          </a>
-
-          <Link to="/artists" className="nav-link">
-            Artists
-          </Link>
-
-          <Link to="/contact" className="nav-link">
-            Contact
-          </Link>
-          <Link to="/add-artwork" className="nav-link">
-            Add artwork
-          </Link>
-
-          {session?.user ? (
-            <Link
-              to="/my-finds"
-              className="profile-button"
-              aria-label="My finds"
-            >
-              {session.user.name
-                ? session.user.name.charAt(0).toUpperCase()
-                : "◎"}
-            </Link>
-          ) : (
-            <Link
-              to="/login"
-              className="profile-button"
-              aria-label="Sign in"
-            >
-              ◎
-            </Link>
-          )}
-        </nav>
-      </header>
-
-      <main>
-        <section className="hero" id="map">
+      <main className="page-main home-main">
+        <section className="page-panel hero" id="map">
           <div className="hero-copy">
-            <span className="location-pill">📍 {homeLabel}</span>
+            <span className="location-pill">
+              📍 {userLocation ? "Your location" : "Explore the map"}
+            </span>
 
             <h2>
               Find the art
@@ -143,7 +148,8 @@ function App() {
 
             <div className="hero-actions">
               <Link to="/add-artwork" className="primary-button">
-                ＋ Add artwork
+                <span aria-hidden="true">+</span>
+                <span>Add artwork</span>
               </Link>
             </div>
           </div>
@@ -151,16 +157,37 @@ function App() {
           <div className="map-wrapper" id="home-map">
             <ArtworkMap
               artworks={artworks}
-              homeArea={homeArea}
-              preserveHomeCenter
+              userLocation={userLocation}
+              preserveUserLocation={Boolean(userLocation)}
             />
           </div>
         </section>
 
         <section className="nearby-section" id="nearby">
           <div className="section-heading nearby-heading">
-            <span className="eyebrow">DISCOVER</span>
-            <h3>Nearby artwork</h3>
+            <div>
+              <span className="eyebrow">
+                {userLocation ? "EXPLORE AROUND YOU" : "DISCOVER"}
+              </span>
+              <h3>Nearby artwork</h3>
+            </div>
+
+            <label className="discovery-sort-control">
+              <span>Sort by</span>
+              <select
+                className="artist-sort"
+                aria-label="Sort artwork"
+                value={artworkSort}
+                onChange={handleArtworkSortChange}
+              >
+                {userLocation && <option value="closest">Closest</option>}
+                {userLocation && <option value="furthest">Furthest</option>}
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="artist-az">Artist A–Z</option>
+                <option value="artist-za">Artist Z–A</option>
+              </select>
+            </label>
           </div>
 
           {loading && <p className="message">Loading artwork…</p>}
@@ -170,27 +197,27 @@ function App() {
           )}
 
           <div className="artwork-grid">
-            {artworks.map((artwork) => (
+            {visibleArtworks.map((artwork) => (
               <article className="artwork-card" key={artwork.id}>
                 <Link
                   to={`/artwork/${artwork.id}`}
                   className="artwork-card-link"
                 >
                   <div className="artwork-image-placeholder">
-                    <img
-                      src={
-                        artwork.primary_photo
-                          ? `/api/images/${artwork.primary_photo}`
-                          : "/artworks/duck-box-local-backup.jpg"
+                    {artwork.primary_photo ? (
+                      <img
+                        src={`/api/images/${artwork.primary_photo}`}
+                        alt={getDiscoveryArtworkTitle(artwork)}
+                        className="artwork-photo"
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    ) : (
+                      <span className="artwork-photo-unavailable">
+                        Photo unavailable
+                      </span>
+                    )}
 
-                      }
-                      alt={getArtworkDisplayTitle(artwork)}
-                      className="artwork-photo"
-                      loading="lazy"
-                      decoding="async"
-                    />
-
-                    <span className="artwork-number">#{artwork.id}</span>
                   </div>
 
                   <div className="artwork-content">
@@ -199,35 +226,49 @@ function App() {
                         ● {artwork.status}
                       </span>
 
-                      <span className="distance">Artwork #{artwork.id}</span>
+                      {artworkDistances.has(artwork.id) && (
+                        <span className="distance">
+                          {formatDistance(artworkDistances.get(artwork.id)!)}
+                        </span>
+                      )}
                     </div>
 
-                    <h4>{getArtworkDisplayTitle(artwork)}</h4>
+                    <h4>{getDiscoveryArtworkTitle(artwork)}</h4>
 
                     <p className="artist">
-                      <ArtistAttribution
-  artistName={artwork.artist_name}
-  instagramHandle={artwork.instagram_handle}
-/>
+                      {artwork.artist_name ?? "Artist unknown"}
                     </p>
-
-                    <p className="metadata">
-                      {artwork.infrastructure_type}
-                      {artwork.city ? ` · ${artwork.city}` : ""}
-                    </p>
-
-                    <p className="photo-count">{artwork.photo_count} of 5 photos</p>
-
-                    {artwork.description && (
-                      <p className="description">{artwork.description}</p>
-                    )}
 
                     <span className="card-button">View artwork →</span>
                   </div>
                 </Link>
+                <AddToWalkButton artworkId={artwork.id} />
               </article>
             ))}
           </div>
+
+          {sortedArtworks.length > 0 && (
+            <div className="load-more-row">
+              <span className="load-more-progress">
+                Showing {Math.min(visibleArtworkCount, sortedArtworks.length)} of{" "}
+                {sortedArtworks.length}
+              </span>
+
+              {hasMoreArtworks && (
+                <button
+                  type="button"
+                  className="load-more-button"
+                  onClick={() =>
+                    setVisibleArtworkCount((count) =>
+                      Math.min(count + ARTWORK_PAGE_SIZE, sortedArtworks.length),
+                    )
+                  }
+                >
+                  Load more
+                </button>
+              )}
+            </div>
+          )}
         </section>
       </main>
 

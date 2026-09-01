@@ -13,23 +13,37 @@ import MobileNav from "./MobileNav.tsx";
 import Contact from "./Contact.tsx";
 import Artists from "./Artists.tsx";
 import ArtistDetail from "./ArtistDetail.tsx";
+import VerifyEmail from "./VerifyEmail.tsx";
+import SiteHeader from "./SiteHeader.tsx";
+import Moderation from "./Moderation.tsx";
+import ArtWalk from "./ArtWalk.tsx";
+import ArtWalkTray from "./ArtWalkTray.tsx";
+import { ArtWalkProvider } from "./ArtWalkContext.tsx";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
-      <Routes>
-        <Route path="/signup" element={<Signup />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/" element={<App />} />
-        <Route path="/artwork/:id" element={<ArtworkDetail />} />
-        <Route path="/my-finds" element={<MyFinds />} />
-        <Route path="/add-artwork" element={<AddArtwork />} />
-        <Route path="/contact" element={<Contact />} />
-        <Route path="/artists" element={<Artists />} />
-<Route path="/artist/:id" element={<ArtistDetail />} />
-      </Routes>
+      <ArtWalkProvider>
+        <SiteHeader />
 
-      <MobileNav />
+        <Routes>
+          <Route path="/signup" element={<Signup />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/" element={<App />} />
+          <Route path="/artwork/:id" element={<ArtworkDetail />} />
+          <Route path="/art-walk" element={<ArtWalk />} />
+          <Route path="/my-finds" element={<MyFinds />} />
+          <Route path="/add-artwork" element={<AddArtwork />} />
+          <Route path="/contact" element={<Contact />} />
+          <Route path="/verify-email" element={<VerifyEmail />} />
+          <Route path="/artists" element={<Artists />} />
+          <Route path="/artist/:id" element={<ArtistDetail />} />
+          <Route path="/admin/moderation" element={<Moderation />} />
+        </Routes>
+
+        <ArtWalkTray />
+        <MobileNav />
+      </ArtWalkProvider>
     </BrowserRouter>
   </StrictMode>,
 );

@@ -1,11 +1,22 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 import ArtworkMap from "./ArtworkMap";
 import "./App.css";
 import { getArtworkDisplayTitle } from "./artworkDisplay";
+import { getArtworkLocality } from "../shared/artwork-location";
 import ArtistAttribution from "./ArtistAttribution";
 import { authClient } from "./lib/auth-client";
-import CommunitySafetyNotice from "./CommunitySafetyNotice";
+import EmailVerificationNotice from "./EmailVerificationNotice";
+import { canUserContribute } from "./emailVerification";
+import ArtistAutocomplete from "./ArtistAutocomplete";
+import { useAdminAccess } from "./useModeratorAccess";
+import AddToWalkButton from "./AddToWalkButton";
+import {
+  formatInfrastructureType,
+  INFRASTRUCTURE_TYPES,
+  normaliseInfrastructureType,
+  type InfrastructureType,
+} from "../shared/infrastructure-types";
 
 
 type Artwork = {
@@ -25,7 +36,6 @@ type Artwork = {
   instagram_handle: string | null;
   primary_photo: string | null;
   photo_added_at: string | null;
-  photo_count: number;
 };
 type ArtworkPhoto = {
   id: number;
@@ -39,11 +49,56 @@ type ArtworkDetailResponse = {
   photos: ArtworkPhoto[];
 };
 
+type ArtworkStatusEvent = {
+  id: number;
+  report_type: string;
+  date_observed: string;
+  note: string | null;
+  photo_storage_key: string | null;
+  replacement_artwork_id: number | null;
+  created_at: string;
+};
+
+type ArtworkStatusHistoryResponse = {
+  current_status: {
+    type: string;
+    date_observed: string;
+    source: "artwork" | "approved_report";
+  };
+  history: ArtworkStatusEvent[];
+};
+
+const STATUS_REPORT_OPTIONS = [
+  { value: "no_longer_there", label: "No longer there" },
+  { value: "changed_replaced", label: "Changed / replaced" },
+  { value: "damaged", label: "Damaged" },
+  { value: "defaced", label: "Defaced" },
+] as const;
+
 const CHECKIN_RADIUS_METRES = 100;
-const MAX_PHOTOS_PER_ARTWORK = 5;
+const MAX_STATUS_PHOTO_SIZE_BYTES = 8 * 1024 * 1024;
+const TODAY = new Date().toISOString().slice(0, 10);
+
+function formatStatusLabel(value: string) {
+  const knownStatus = STATUS_REPORT_OPTIONS.find(
+    (option) => option.value === value,
+  );
+
+  if (knownStatus) {
+    return knownStatus.label;
+  }
+
+  return value.replaceAll("_", " ").replace(/^./, (letter) =>
+    letter.toUpperCase(),
+  );
+}
 
 function formatArtworkDate(value: string) {
-  const dateValue = value.includes("T") ? value : value.replace(" ", "T") + "Z";
+  const dateValue = /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? `${value}T00:00:00.000Z`
+    : value.includes("T")
+      ? value
+      : value.replace(" ", "T") + "Z";
 
   return new Date(dateValue).toLocaleDateString("en-GB", {
     day: "numeric",
@@ -77,16 +132,25 @@ function calculateDistanceMetres(
 }
 
 export default function ArtworkDetail() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const uploadModeration = (
+    location.state as {
+      uploadModeration?: "review" | "rejected" | null;
+    } | null
+  )?.uploadModeration;
 
   const { id } = useParams();
   const [photos, setPhotos] = useState<ArtworkPhoto[]>([]);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
-  const [newPhotos, setNewPhotos] = useState<File[]>([]);
-  const [addingPhotos, setAddingPhotos] = useState(false);
-  const [photoError, setPhotoError] = useState("");
 
 
   const [artwork, setArtwork] = useState<Artwork | null>(null);
+  const [currentApprovedStatus, setCurrentApprovedStatus] = useState<
+    ArtworkStatusHistoryResponse["current_status"] | null
+  >(null);
+  const [statusHistory, setStatusHistory] = useState<ArtworkStatusEvent[]>([]);
+  const [statusHistoryError, setStatusHistoryError] = useState("");
 
   const [loading, setLoading] = useState(true);
 
@@ -96,40 +160,38 @@ export default function ArtworkDetail() {
 
   const [distanceMetres, setDistanceMetres] = useState<number | null>(null);
 
-  const [locationError, setLocationError] = useState("");
+  const [locationError, setLocationError] = useState(() =>
+    navigator.geolocation
+      ? ""
+      : "Location is not supported by this browser.",
+  );
   const { data: session } = authClient.useSession();
-  const remainingPhotoSlots = Math.max(0, MAX_PHOTOS_PER_ARTWORK - (artwork?.photo_count ?? 0));
-
-  async function addPhotos(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!artwork || newPhotos.length === 0) return;
-    setAddingPhotos(true);
-    setPhotoError("");
-    try {
-      const formData = new FormData();
-      newPhotos.forEach((photo) => formData.append("photos", photo));
-      const response = await fetch(`/api/artworks/${artwork.id}/photos`, { method: "POST", body: formData });
-      if (!response.ok) {
-        const data = await response.json().catch(() => null);
-        throw new Error(data?.error ?? "Could not add photos.");
-      }
-      window.location.reload();
-    } catch (error) {
-      setPhotoError(error instanceof Error ? error.message : "Could not add photos.");
-      setAddingPhotos(false);
-    }
-  }
+  const { isAdmin } = useAdminAccess(session?.user.id);
+  const canContribute = canUserContribute(session?.user);
 
   const [editing, setEditing] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState("");
+  const [deletingArtwork, setDeletingArtwork] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const [editTitle, setEditTitle] = useState("");
   const [editArtistName, setEditArtistName] = useState("");
   const [editInstagramHandle, setEditInstagramHandle] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editInfrastructureType, setEditInfrastructureType] =
-    useState("");
+    useState<InfrastructureType>("Utility box / cabinet");
+  const [editLatitude, setEditLatitude] = useState("");
+  const [editLongitude, setEditLongitude] = useState("");
+
+  const [reportingOpen, setReportingOpen] = useState(false);
+  const [reportType, setReportType] = useState("");
+  const [dateObserved, setDateObserved] = useState(TODAY);
+  const [reportNote, setReportNote] = useState("");
+  const [reportPhoto, setReportPhoto] = useState<File | null>(null);
+  const [submittingReport, setSubmittingReport] = useState(false);
+  const [reportError, setReportError] = useState("");
+  const [reportSuccess, setReportSuccess] = useState("");
 
   function startEditing() {
     if (!artwork) {
@@ -140,21 +202,52 @@ export default function ArtworkDetail() {
     setEditArtistName(artwork.artist_name ?? "");
     setEditInstagramHandle(artwork.instagram_handle ?? "");
     setEditDescription(artwork.description ?? "");
-    setEditInfrastructureType(artwork.infrastructure_type ?? "");
+    setEditInfrastructureType(
+      normaliseInfrastructureType(artwork.infrastructure_type) ?? "Other",
+    );
+    setEditLatitude(artwork.latitude.toString());
+    setEditLongitude(artwork.longitude.toString());
 
     setEditError("");
     setEditing(true);
+  }
+
+  async function deleteArtwork() {
+    if (
+      !artwork ||
+      !window.confirm(
+        `Permanently delete ${getArtworkDisplayTitle(artwork)} and all of its photos, check-ins, reports and history? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    setDeletingArtwork(true);
+    setDeleteError("");
+
+    try {
+      const response = await fetch(`/api/admin/artworks/${artwork.id}`, {
+        method: "DELETE",
+      });
+      const data = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Could not delete this artwork.");
+      }
+
+      navigate("/", { replace: true });
+    } catch (error) {
+      setDeleteError(
+        error instanceof Error ? error.message : "Could not delete this artwork.",
+      );
+      setDeletingArtwork(false);
+    }
   }
 
   async function saveEdits(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!artwork) {
-      return;
-    }
-
-    if (!editInfrastructureType.trim()) {
-      setEditError("Infrastructure type is required.");
       return;
     }
 
@@ -173,6 +266,12 @@ export default function ArtworkDetail() {
           instagram_handle: editInstagramHandle,
           description: editDescription,
           infrastructure_type: editInfrastructureType,
+          ...(isAdmin
+            ? {
+                latitude: Number(editLatitude),
+                longitude: Number(editLongitude),
+              }
+            : {}),
         }),
       });
 
@@ -199,6 +298,10 @@ export default function ArtworkDetail() {
             artist_name: data.artwork?.artist_name ?? null,
             instagram_handle:
               data.artwork?.instagram_handle ?? null,
+            latitude: data.artwork?.latitude ?? current.latitude,
+            longitude: data.artwork?.longitude ?? current.longitude,
+            town: data.artwork?.town ?? null,
+            city: data.artwork?.city ?? null,
           }
           : current,
       );
@@ -215,10 +318,73 @@ export default function ArtworkDetail() {
     }
   }
 
+  async function submitStatusReport(
+    event: React.FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    if (!artwork || !canContribute) {
+      return;
+    }
+
+    const form = event.currentTarget;
+    const formData = new FormData();
+
+    formData.set("report_type", reportType);
+    formData.set("date_observed", dateObserved);
+    formData.set("note", reportNote);
+
+    if (reportPhoto) {
+      formData.set("supporting_photo", reportPhoto);
+    }
+
+    setSubmittingReport(true);
+    setReportError("");
+    setReportSuccess("");
+
+    try {
+      const response = await fetch(
+        `/api/artworks/${artwork.id}/status-reports`,
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
+      const data = (await response.json()) as {
+        error?: string;
+        report?: { moderation_state?: string };
+      };
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Could not submit status report.");
+      }
+
+      setReportSuccess(
+        "Report submitted for review. The public artwork status has not changed.",
+      );
+      setReportType("");
+      setDateObserved(TODAY);
+      setReportNote("");
+      setReportPhoto(null);
+      form.reset();
+    } catch (error) {
+      setReportError(
+        error instanceof Error
+          ? error.message
+          : "Could not submit status report.",
+      );
+    } finally {
+      setSubmittingReport(false);
+    }
+  }
+
   useEffect(() => {
     async function loadArtwork() {
       try {
-        const response = await fetch(`/api/artworks/${id}`);
+        const [response, statusResponse] = await Promise.all([
+          fetch(`/api/artworks/${id}`),
+          fetch(`/api/artworks/${id}/status-reports`),
+        ]);
 
         if (!response.ok) {
           setArtwork(null);
@@ -230,6 +396,19 @@ export default function ArtworkDetail() {
         setArtwork(data.artwork);
         setPhotos(data.photos ?? []);
         setCurrentPhotoIndex(0);
+
+        if (statusResponse.ok) {
+          const statusData =
+            (await statusResponse.json()) as ArtworkStatusHistoryResponse;
+
+          setCurrentApprovedStatus(statusData.current_status);
+          setStatusHistory(statusData.history ?? []);
+          setStatusHistoryError("");
+        } else {
+          setCurrentApprovedStatus(null);
+          setStatusHistory([]);
+          setStatusHistoryError("Status history is temporarily unavailable.");
+        }
 
         const checkinResponse = await fetch(
           `/api/artworks/${data.artwork.id}/checkin`,
@@ -260,7 +439,6 @@ export default function ArtworkDetail() {
     }
 
     if (!navigator.geolocation) {
-      setLocationError("Location is not supported by this browser.");
       return;
     }
 
@@ -301,7 +479,11 @@ export default function ArtworkDetail() {
           : "far";
 
   const canCheckIn =
-    !checkedIn && !checkingIn && (withinCheckinRadius || isLocalhost);
+    canContribute &&
+    !checkedIn &&
+    !checkingIn &&
+    (withinCheckinRadius || isLocalhost);
+  const approvedStatusType = currentApprovedStatus?.type ?? artwork?.status ?? "present";
 
   async function handleCheckin() {
     if (!artwork || !canCheckIn) {
@@ -370,11 +552,22 @@ export default function ArtworkDetail() {
         <Link to="/" className="back-link">
           ← Back to map
         </Link>
-
-        <span className="detail-number">Artwork #{artwork.id}</span>
       </header>
 
       <main className="detail-main">
+        {uploadModeration === "review" && (
+          <p className="status-report-success upload-moderation-notice" role="status">
+            Your artwork details are saved. One or more images are private
+            while a moderator reviews them.
+          </p>
+        )}
+        {uploadModeration === "rejected" && (
+          <p className="status-report-requirement upload-moderation-notice" role="status">
+            Your artwork details are saved, but an image was not published
+            because it did not pass the upload safety check.
+          </p>
+        )}
+
         <section className="detail-hero">
           <div className="detail-photo-wrap">
             {photos.length > 0 && (
@@ -424,11 +617,17 @@ export default function ArtworkDetail() {
           </div>
 
           <div className="detail-info">
-            <span className={`status status-${artwork.status}`}>
-              ● {artwork.status}
-            </span>
+            <div className="current-artwork-status">
+              <span>Current approved status</span>
+              <strong>{formatStatusLabel(approvedStatusType)}</strong>
+              {currentApprovedStatus?.source === "approved_report" && (
+                <small>
+                  Observed {formatArtworkDate(currentApprovedStatus.date_observed)}
+                </small>
+              )}
+            </div>
 
-            <h1>{artwork.title?.trim() || "Utility cabinet"}</h1>
+            <h1>{getArtworkDisplayTitle(artwork)}</h1>
 
             <ArtistAttribution
               artistName={artwork.artist_name}
@@ -436,47 +635,45 @@ export default function ArtworkDetail() {
             />
 
             <p className="detail-meta">
-              {artwork.infrastructure_type}
-              {artwork.city ? ` · ${artwork.city}` : ""}
+              {formatInfrastructureType(artwork.infrastructure_type)}
+              {getArtworkLocality(artwork)
+                ? ` · ${getArtworkLocality(artwork)}`
+                : ""}
             </p>
-
-            <p className="detail-photo-count">
-              {artwork.photo_count} of {MAX_PHOTOS_PER_ARTWORK} photos
-              {remainingPhotoSlots > 0
-                ? ` · ${remainingPhotoSlots} ${remainingPhotoSlots === 1 ? "space" : "spaces"} left`
-                : " · Photo limit reached"}
-            </p>
-
-            {session?.user && remainingPhotoSlots > 0 && (
-              <form className="add-photos-form" onSubmit={addPhotos}>
-                <CommunitySafetyNotice context="upload" />
-                <label>
-                  Add up to {remainingPhotoSlots} more {remainingPhotoSlots === 1 ? "photo" : "photos"}
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    multiple
-                    disabled={addingPhotos}
-                    onChange={(event) => {
-                      setNewPhotos(Array.from(event.target.files ?? []));
-                      setPhotoError("");
-                    }}
-                  />
-                </label>
-                {photoError && <p className="form-error" role="alert">{photoError}</p>}
-                <button type="submit" className="checkin-button" disabled={addingPhotos || newPhotos.length === 0 || newPhotos.length > remainingPhotoSlots}>
-                  {addingPhotos ? "Adding photos…" : "Add photos"}
-                </button>
-              </form>
+            {session?.user && !canContribute && (
+              <EmailVerificationNotice email={session.user.email} compact />
             )}
-            {session?.user && !editing && (
-              <button
-                type="button"
-                className="edit-details-button"
-                onClick={startEditing}
-              >
-                Edit details
-              </button>
+
+            <AddToWalkButton artworkId={artwork.id} />
+
+            {!editing && (canContribute || isAdmin) && (
+              <div className="detail-management-actions">
+                {canContribute && (
+                  <button
+                    type="button"
+                    className="edit-details-button"
+                    onClick={startEditing}
+                  >
+                    Edit details
+                  </button>
+                )}
+                {isAdmin && (
+                  <button
+                    type="button"
+                    className="delete-artwork-button"
+                    disabled={deletingArtwork}
+                    onClick={() => void deleteArtwork()}
+                  >
+                    {deletingArtwork ? "Deleting…" : "Delete artwork"}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {deleteError && (
+              <p className="form-error" role="alert">
+                {deleteError}
+              </p>
             )}
 
             {editing && (
@@ -507,41 +704,32 @@ export default function ArtworkDetail() {
                   />
                 </label>
 
-                <label>
-                  Artist name
-                  <input
-                    type="text"
-                    value={editArtistName}
-                    onChange={(event) => setEditArtistName(event.target.value)}
-                    placeholder="Unknown artist"
-                  />
-                </label>
+                <ArtistAutocomplete
+                  artistName={editArtistName}
+                  instagramHandle={editInstagramHandle}
+                  onArtistNameChange={setEditArtistName}
+                  onInstagramHandleChange={setEditInstagramHandle}
+                  namePlaceholder="Artist unknown"
+                  handlePlaceholder="@artist"
+                />
 
                 <label>
-                  Instagram
-                  <input
-                    type="text"
-                    value={editInstagramHandle}
-                    onChange={(event) =>
-                      setEditInstagramHandle(event.target.value)
-                    }
-                    placeholder="@artist"
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
-                  />
-                </label>
-
-                <label>
-                  Infrastructure type
-                  <input
-                    type="text"
+                  Artwork setting
+                  <select
                     required
                     value={editInfrastructureType}
                     onChange={(event) =>
-                      setEditInfrastructureType(event.target.value)
+                      setEditInfrastructureType(
+                        event.target.value as InfrastructureType,
+                      )
                     }
-                  />
+                  >
+                    {INFRASTRUCTURE_TYPES.map((type) => (
+                      <option value={type} key={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
                 </label>
 
                 <label>
@@ -557,6 +745,43 @@ export default function ArtworkDetail() {
                   />
                 </label>
 
+                {isAdmin && (
+                  <fieldset className="edit-location-fields">
+                    <legend>Artwork location</legend>
+                    <p>
+                      Updating coordinates refreshes the displayed locality.
+                    </p>
+                    <div>
+                      <label>
+                        Latitude
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          step="any"
+                          min={-90}
+                          max={90}
+                          value={editLatitude}
+                          onChange={(event) => setEditLatitude(event.target.value)}
+                          required
+                        />
+                      </label>
+                      <label>
+                        Longitude
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          step="any"
+                          min={-180}
+                          max={180}
+                          value={editLongitude}
+                          onChange={(event) => setEditLongitude(event.target.value)}
+                          required
+                        />
+                      </label>
+                    </div>
+                  </fieldset>
+                )}
+
                 {editError && (
                   <p className="form-error">{editError}</p>
                 )}
@@ -568,16 +793,7 @@ export default function ArtworkDetail() {
                 >
                   {savingEdit ? "Saving…" : "Save changes"}
                 </button>
-
-                <button
-                  type="button"
-                  className="text-button edit-cancel-button"
-                  disabled={savingEdit}
-                  onClick={() => {
-                    setEditing(false);
-                    setEditError("");
-                  }}
-                >
+                <button type="button" className="text-button edit-cancel-button" disabled={savingEdit} onClick={() => { setEditing(false); setEditError(""); }}>
                   Cancel
                 </button>
               </form>
@@ -668,11 +884,15 @@ export default function ArtworkDetail() {
                 ? "Checking in…"
                 : checkedIn
                   ? "✓ You checked in"
-                  : withinCheckinRadius
-                    ? "Check in here"
-                    : isLocalhost
-                      ? "Check in here (dev)"
-                      : "🔒 Get closer to check in"}
+                  : !session?.user
+                    ? "🔒 Sign in to check in"
+                    : !canContribute
+                      ? "Verify email to check in"
+                      : withinCheckinRadius
+                        ? "Check in here"
+                        : isLocalhost
+                          ? "Check in here (dev)"
+                          : "🔒 Get closer to check in"}
             </button>
 
             {checkedIn && (
@@ -689,6 +909,191 @@ export default function ArtworkDetail() {
               >
                 Reset check-in (dev)
               </button>
+            )}
+          </div>
+        </section>
+
+        <section className="status-report-section">
+          <div className="status-history-panel">
+            <span className="eyebrow">STATUS HISTORY</span>
+            <h2>What’s happened here</h2>
+            <p className="status-section-intro">
+              Only reviewed and approved reports appear in this public history.
+            </p>
+
+            {statusHistoryError ? (
+              <p className="status-history-empty">{statusHistoryError}</p>
+            ) : statusHistory.length > 0 ? (
+              <ol className="status-timeline">
+                {statusHistory.map((event) => (
+                  <li key={event.id}>
+                    <div className="status-timeline-marker" aria-hidden="true" />
+                    <div className="status-timeline-content">
+                      <time dateTime={event.date_observed}>
+                        {formatArtworkDate(event.date_observed)}
+                      </time>
+                      <h3>{formatStatusLabel(event.report_type)}</h3>
+
+                      {event.note && <p>{event.note}</p>}
+
+                      {event.photo_storage_key && (
+                        <img
+                          src={`/api/images/${event.photo_storage_key}`}
+                          alt={`Supporting evidence for ${formatStatusLabel(event.report_type).toLowerCase()}`}
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      )}
+
+                      {event.replacement_artwork_id && (
+                        <Link to={`/artwork/${event.replacement_artwork_id}`}>
+                          View replacement artwork →
+                        </Link>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="status-history-empty">
+                No approved status changes have been reported yet.
+              </p>
+            )}
+          </div>
+
+          <div className="report-status-panel">
+            <span className="eyebrow">KEEP IT CURRENT</span>
+            <h2>Seen a change?</h2>
+            <p className="status-section-intro">
+              Submit what you observed. Reports stay pending until they’ve been
+              reviewed and never change the public status immediately.
+            </p>
+
+            {!session?.user ? (
+              <Link to="/login" className="report-signin-link">
+                Sign in to report a change
+              </Link>
+            ) : !canContribute ? (
+              <p className="status-report-requirement">
+                Verify your email before submitting a status report.
+              </p>
+            ) : !reportingOpen ? (
+              <button
+                type="button"
+                className="report-status-button"
+                onClick={() => {
+                  setReportingOpen(true);
+                  setReportError("");
+                  setReportSuccess("");
+                }}
+              >
+                Report artwork status
+              </button>
+            ) : (
+              <form className="status-report-form" onSubmit={submitStatusReport}>
+                <label>
+                  What did you observe?
+                  <select
+                    required
+                    value={reportType}
+                    onChange={(event) => setReportType(event.target.value)}
+                  >
+                    <option value="">Choose a status</option>
+                    {STATUS_REPORT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  Date observed
+                  <input
+                    type="date"
+                    required
+                    max={TODAY}
+                    value={dateObserved}
+                    onChange={(event) => setDateObserved(event.target.value)}
+                  />
+                </label>
+
+                <label>
+                  Note <span>Optional</span>
+                  <textarea
+                    rows={4}
+                    maxLength={1000}
+                    value={reportNote}
+                    onChange={(event) => setReportNote(event.target.value)}
+                    placeholder="Add useful context for the reviewer"
+                  />
+                </label>
+
+                <label>
+                  Supporting photo <span>Optional · JPEG, PNG or WebP</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] ?? null;
+
+                      if (file && file.size > MAX_STATUS_PHOTO_SIZE_BYTES) {
+                        setReportPhoto(null);
+                        setReportError("Supporting photos must be smaller than 8 MB.");
+                        event.target.value = "";
+                        return;
+                      }
+
+                      setReportPhoto(file);
+                      setReportError("");
+                    }}
+                  />
+                </label>
+
+                {reportPhoto && (
+                  <p className="selected-report-photo">
+                    Selected: {reportPhoto.name}
+                  </p>
+                )}
+
+                {reportError && (
+                  <p className="form-error" role="alert">
+                    {reportError}
+                  </p>
+                )}
+
+                {reportSuccess && (
+                  <p className="status-report-success" role="status">
+                    {reportSuccess}
+                  </p>
+                )}
+
+                <div className="status-report-actions">
+                  <button
+                    type="submit"
+                    className="report-status-button"
+                    disabled={submittingReport}
+                  >
+                    {submittingReport ? "Submitting…" : "Submit for review"}
+                  </button>
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => {
+                      setReportingOpen(false);
+                      setReportError("");
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {reportSuccess && !reportingOpen && (
+              <p className="status-report-success" role="status">
+                {reportSuccess}
+              </p>
             )}
           </div>
         </section>

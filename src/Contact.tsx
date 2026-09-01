@@ -8,15 +8,13 @@ export default function Contact() {
         <Link to="/" className="back-link">
           ← Back to map
         </Link>
-
-        <span className="detail-number">Contact</span>
       </header>
 
-      <main className="detail-main">
-        <section className="contact-panel">
+      <main className="detail-main page-main">
+        <section className="page-panel contact-panel">
           <span className="eyebrow">GET IN TOUCH</span>
 
-          <h1>Contact Artility</h1>
+          <h1>Contact</h1>
 
           <p className="contact-intro">
             Found something wrong, know who painted an artwork, or just want

@@ -18,7 +18,7 @@ export default defineConfig({
         short_name: "Artility",
         description: "Find, photograph and check in at street art hiding in plain sight.",
 
-        theme_color: "#082b50",
+        theme_color: "#f3ead5",
         background_color: "#f3ead5",
 
         display: "standalone",
@@ -27,18 +27,18 @@ export default defineConfig({
 
         icons: [
           {
-            src: "/pwa-192x192.png",
+            src: "/icon-192.png",
             sizes: "192x192",
             type: "image/png",
           },
           {
-            src: "/pwa-512x512.png",
+            src: "/icon-512.png",
             sizes: "512x512",
             type: "image/png",
             purpose: "any",
           },
           {
-            src: "/maskable-icon-512x512.png",
+            src: "/icon-512.png",
             sizes: "512x512",
             type: "image/png",
             purpose: "maskable",
@@ -48,6 +48,7 @@ export default defineConfig({
 
       workbox: {
         cleanupOutdatedCaches: true,
+        navigateFallbackDenylist: [/^\/api\//],
 
         runtimeCaching: [
           {

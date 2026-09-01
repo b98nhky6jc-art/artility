@@ -1,15 +1,18 @@
 import { Link, useLocation, useNavigate } from "react-router";
 import { authClient } from "./lib/auth-client";
+import { useAdminAccess } from "./useModeratorAccess";
 
 export default function MobileNav() {
   const location = useLocation();
   const navigate = useNavigate();
   const { data: session } = authClient.useSession();
+  const { isAdmin } = useAdminAccess(session?.user.id);
 
   const signedIn = Boolean(session?.user);
 
   const isHome = location.pathname === "/";
   const isAdd = location.pathname === "/add-artwork";
+  const isModeration = location.pathname.startsWith("/admin/moderation");
 
   const isAccount =
     location.pathname === "/my-finds" ||
@@ -68,7 +71,10 @@ export default function MobileNav() {
   }
 
   return (
-    <nav className="mobile-nav" aria-label="Main navigation">
+    <nav
+      className={`mobile-nav ${isAdmin ? "has-moderation" : ""}`}
+      aria-label="Main navigation"
+    >
       <button
         type="button"
         className={isHome ? "active" : ""}
@@ -108,6 +114,17 @@ export default function MobileNav() {
         <span className="nav-icon">✦</span>
         <span>Artists</span>
       </Link>
+
+      {isAdmin && (
+        <Link
+          to="/admin/moderation"
+          className={isModeration ? "active" : ""}
+          aria-label="Open moderation review queue"
+        >
+          <span className="nav-icon">✓</span>
+          <span>Review</span>
+        </Link>
+      )}
     </nav>
   );
 }

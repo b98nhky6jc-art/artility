@@ -25,7 +25,16 @@
   "observability": {
     "enabled": true
   },
+  "triggers": {
+    "crons": [
+      "*/10 * * * *"
+    ]
+  },
   "upload_source_maps": true,
+  "vars": {
+    "ADMIN_EMAILS": "hello@artility.co.uk,temorris@me.com",
+    "ALERT_EMAILS": "hello@artility.co.uk,temorris@me.com"
+  },
   "d1_databases": [
     {
       "binding": "DB",

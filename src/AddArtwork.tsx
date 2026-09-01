@@ -5,9 +5,20 @@ import "./App.css";
 import LibRaw from "libraw-wasm";
 import { getArtworkDisplayTitle } from "./artworkDisplay";
 import { authClient } from "./lib/auth-client";
-import CommunitySafetyNotice from "./CommunitySafetyNotice";
+import EmailVerificationNotice from "./EmailVerificationNotice";
+import { canUserContribute } from "./emailVerification";
+import ArtistAutocomplete from "./ArtistAutocomplete";
+import {
+  INFRASTRUCTURE_TYPES,
+  type InfrastructureType,
+} from "../shared/infrastructure-types";
 
-type Stage = "upload" | "review";
+type Stage = "upload" | "review" | "submitted";
+type UploadModerationNotice = "processing" | "review" | "rejected";
+type SubmissionResult = {
+  artworkId: number;
+  moderation: UploadModerationNotice;
+};
 type NearbyArtwork = {
   id: number;
   title: string | null;
@@ -21,6 +32,36 @@ type NearbyArtwork = {
   distance_metres: number;
   artist_id: number | null;
 };
+type UploadResponse = {
+  id?: number;
+  artwork_id?: number;
+  image_moderation?: Array<{
+    id: number;
+    state: "approved" | "rejected" | "manual_review" | "pending";
+  }>;
+};
+
+function getUploadModerationNotice(data: UploadResponse) {
+  const states = data.image_moderation?.map((item) => item.state) ?? [];
+
+  if (states.some((state) => state === "manual_review")) {
+    return "review" as const;
+  }
+
+  if (states.some((state) => state === "pending")) {
+    return "processing" as const;
+  }
+
+  if (states.some((state) => state === "rejected")) {
+    return "rejected" as const;
+  }
+
+  return null;
+}
+
+function hasApprovedUpload(data: UploadResponse) {
+  return data.image_moderation?.some((item) => item.state === "approved") ?? false;
+}
 async function normaliseImage(file: File): Promise<File> {
   const MAX_DIMENSION = 2200;
   const JPEG_QUALITY = 0.88;
@@ -243,10 +284,11 @@ async function createThumbnail(file: File): Promise<File> {
   }
 }
 
-const MAX_PHOTOS_PER_ARTWORK = 3;
+const MAX_PHOTOS_PER_ARTWORK = 5;
 export default function AddArtwork() {
   const navigate = useNavigate();
   const { data: session, isPending } = authClient.useSession();
+  const canContribute = canUserContribute(session?.user);
 
 
   useEffect(() => {
@@ -267,7 +309,7 @@ export default function AddArtwork() {
   const [instagramHandle, setInstagramHandle] = useState("");
   const [description, setDescription] = useState("");
   const [infrastructureType, setInfrastructureType] =
-    useState("utility cabinet");
+    useState<InfrastructureType>("Utility box / cabinet");
 
   const [latitude, setLatitude] = useState<number | null>(null);
   const [longitude, setLongitude] = useState<number | null>(null);
@@ -278,6 +320,8 @@ export default function AddArtwork() {
   const [readingPhoto, setReadingPhoto] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [submissionResult, setSubmissionResult] =
+    useState<SubmissionResult | null>(null);
 
   async function checkNearbyArtworks(latitude: number, longitude: number) {
     setCheckingNearby(true);
@@ -455,8 +499,6 @@ export default function AddArtwork() {
       formData.append("infrastructure_type", infrastructureType);
       formData.append("latitude", latitude.toString());
       formData.append("longitude", longitude.toString());
-      formData.append("town", "Leeds");
-      formData.append("city", "Leeds");
 
       const orderedFiles = [
         files[primaryPhotoIndex],
@@ -477,12 +519,33 @@ export default function AddArtwork() {
       });
 
       if (!response.ok) {
-        throw new Error(`API returned ${response.status}`);
+        const data = await response.json().catch(() => null);
+        throw new Error(
+          data?.error ?? `API returned ${response.status}`,
+        );
       }
 
-      const artwork = await response.json();
+      const artwork = (await response.json()) as UploadResponse;
 
-      navigate(`/artwork/${artwork.id}`);
+      if (!artwork.id) {
+        throw new Error("The artwork response was incomplete.");
+      }
+
+      const moderationNotice = getUploadModerationNotice(artwork);
+
+      if (moderationNotice && !hasApprovedUpload(artwork)) {
+        setSubmissionResult({
+          artworkId: artwork.id,
+          moderation: moderationNotice,
+        });
+        setStage("submitted");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+
+      navigate(`/artwork/${artwork.id}`, {
+        state: { uploadModeration: moderationNotice },
+      });
     } catch (error) {
       console.error(error);
       setError("Could not add artwork.");
@@ -497,13 +560,19 @@ export default function AddArtwork() {
         <Link to="/" className="back-link">
           ← Back to map
         </Link>
-
-        <span className="detail-number">New artwork</span>
       </header>
 
-      <main className="detail-main">
-        <section className="add-artwork-panel">
-          {stage === "upload" && (
+      <main className="detail-main page-main">
+        <section className="page-panel add-artwork-panel">
+          {session?.user && !canContribute && (
+            <>
+              <span className="eyebrow">VERIFICATION REQUIRED</span>
+              <h1>Add artwork</h1>
+              <EmailVerificationNotice email={session.user.email} />
+            </>
+          )}
+
+          {canContribute && stage === "upload" && (
             <>
               <span className="eyebrow">CONTRIBUTE</span>
 
@@ -511,12 +580,9 @@ export default function AddArtwork() {
 
               <p>
 
-                Upload up to 5 photos and we’ll pull out whatever useful information we can.
+                Upload up to {MAX_PHOTOS_PER_ARTWORK} photos and we’ll pull out whatever useful information we can.
 
               </p>
-
-              <CommunitySafetyNotice context="upload" />
-
               <label
                 className="photo-upload"
                 onDragOver={(event) => {
@@ -543,9 +609,15 @@ export default function AddArtwork() {
 
                 <span className="photo-upload-icon">📷</span>
 
-                <strong>Choose up to 5 artwork photos</strong>
+                <strong>Choose up to {MAX_PHOTOS_PER_ARTWORK} artwork photos</strong>
 
-                <span>Drop up to 5 photos here, or click to browse</span>
+                <span className="photo-upload-instruction">
+                  Drop up to {MAX_PHOTOS_PER_ARTWORK} photos here, or click to browse
+                </span>
+
+                <span className="photo-upload-helper">
+                  Only upload photos you took or have permission to share. Avoid identifiable people, private addresses and number plates.
+                </span>
               </label>
 
               {readingPhoto && <p className="message">Reading photo…</p>}
@@ -554,7 +626,7 @@ export default function AddArtwork() {
             </>
           )}
 
-          {stage === "review" && (
+          {canContribute && stage === "review" && (
             <>
               <span className="eyebrow">CHECK THE DETAILS</span>
 
@@ -621,41 +693,28 @@ export default function AddArtwork() {
                   />
                 </label>
 
-                <label>
-                  Artist name
-                  <input
-                    value={artistName}
-                    onChange={(event) => setArtistName(event.target.value)}
-                    placeholder="Optional"
-                  />
-                </label>
+                <ArtistAutocomplete
+                  artistName={artistName}
+                  instagramHandle={instagramHandle}
+                  onArtistNameChange={setArtistName}
+                  onInstagramHandleChange={setInstagramHandle}
+                />
 
                 <label>
-                  Instagram handle
-                  <input
-                    value={instagramHandle}
-                    onChange={(event) =>
-                      setInstagramHandle(event.target.value.replace(/^@/, ""))
-                    }
-                    placeholder="Optional — without @"
-                  />
-                </label>
-
-                <label>
-                  Type
+                  Artwork setting
                   <select
                     value={infrastructureType}
                     onChange={(event) =>
-                      setInfrastructureType(event.target.value)
+                      setInfrastructureType(
+                        event.target.value as InfrastructureType,
+                      )
                     }
                   >
-                    <option value="utility cabinet">Utility cabinet</option>
-
-                    <option value="street cabinet">Street cabinet</option>
-
-                    <option value="bollard">Bollard</option>
-
-                    <option value="other">Other</option>
+                    {INFRASTRUCTURE_TYPES.map((type) => (
+                      <option value={type} key={type}>
+                        {type}
+                      </option>
+                    ))}
                   </select>
                 </label>
 
@@ -820,7 +879,15 @@ export default function AddArtwork() {
                                         );
                                       }
 
-                                      navigate(`/artwork/${artwork.id}`);
+                                      const result =
+                                        (await response.json()) as UploadResponse;
+
+                                      navigate(`/artwork/${artwork.id}`, {
+                                        state: {
+                                          uploadModeration:
+                                            getUploadModerationNotice(result),
+                                        },
+                                      });
                                     } catch (error) {
                                       console.error(error);
 
@@ -903,6 +970,94 @@ export default function AddArtwork() {
                 </div>
               </form>
             </>
+          )}
+
+          {canContribute && stage === "submitted" && submissionResult && (
+            <div className="artwork-submission-result" role="status">
+              <span className="eyebrow">SUBMISSION RECEIVED</span>
+
+              <h1>
+                {submissionResult.moderation === "processing"
+                  ? "Your artwork is completing a safety check"
+                  : submissionResult.moderation === "review"
+                    ? "Your artwork is awaiting review"
+                    : "This artwork wasn’t published"}
+              </h1>
+
+              <div
+                className={`artwork-submission-message artwork-submission-${submissionResult.moderation}`}
+              >
+                <span className="artwork-submission-badge">
+                  {submissionResult.moderation === "processing"
+                    ? "Safety check pending"
+                    : submissionResult.moderation === "review"
+                      ? "Manual review"
+                      : "Image not approved"}
+                </span>
+
+                {submissionResult.moderation === "processing" ? (
+                  <>
+                    <h2>Your submission is saved safely.</h2>
+                    <p>
+                      The automated image check is temporarily unavailable, so
+                      Artility will retry it automatically. The image and
+                      artwork remain private while that happens.
+                    </p>
+                    <p>
+                      You do not need to submit it again. If the check cannot
+                      be completed after several attempts, a moderator will be
+                      notified to review it.
+                    </p>
+                  </>
+                ) : submissionResult.moderation === "review" ? (
+                  <>
+                    <h2>Your submission is saved safely.</h2>
+                    <p>
+                      A moderator has been notified and will review the photo.
+                      Until it is approved, the artwork will not appear on
+                      Explore, Nearby artwork, Artists, search, or any public
+                      artwork page.
+                    </p>
+                    <p>
+                      You do not need to submit it again. If approved, it will
+                      be published automatically.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <h2>The uploaded image did not pass the safety check.</h2>
+                    <p>
+                      Neither the image nor this artwork is visible anywhere
+                      on Artility. You can try again with a different, clear
+                      photo or contact us if you think this was a mistake.
+                    </p>
+                  </>
+                )}
+
+                <span className="artwork-submission-reference">
+                  Submission #{submissionResult.artworkId}
+                </span>
+              </div>
+
+              <div className="artwork-submission-actions">
+                <Link to="/" className="primary-button">
+                  Continue exploring
+                </Link>
+                {submissionResult.moderation === "review" ? (
+                  <Link
+                    to="/add-artwork"
+                    className="secondary-button"
+                    reloadDocument
+                  >
+                    Add another artwork
+                  </Link>
+                ) : (
+                  <Link to="/contact" className="secondary-button">
+                    Contact Artility
+                  </Link>
+                )}
+              </div>
+            </div>
           )}
         </section>
       </main>
