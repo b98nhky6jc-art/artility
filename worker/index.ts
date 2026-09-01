@@ -29,6 +29,7 @@ import {
   requestOpenRouteServiceWalkingRoute,
   RoutingError,
   validateRoutePlanInput,
+  type WalkingRoute,
 } from "./routing.js";
 import {
   needsLocationMetadataRefresh,
@@ -46,6 +47,7 @@ const MAX_PHOTOS_PER_ARTWORK = 5;
 const MAX_AUTOMATED_MODERATION_ATTEMPTS = 3;
 const MODERATION_RETRY_BATCH_SIZE = 5;
 const MAX_STATUS_REPORT_NOTE_LENGTH = 1000;
+const WALKING_ROUTE_CACHE_SECONDS = 5 * 60;
 const STATUS_REPORT_TYPES = new Set([
   "no_longer_there",
   "changed_replaced",
@@ -60,6 +62,29 @@ type ArtworkPhotoModerationState =
   | "approved"
   | "rejected"
   | "manual_review";
+
+function createWalkingRouteCacheKey(
+  requestUrl: string,
+  coordinates: number[][],
+) {
+  const cacheUrl = new URL("/api/internal/walking-route-cache", requestUrl);
+  cacheUrl.searchParams.set("coordinates", JSON.stringify(coordinates));
+  return new Request(cacheUrl.toString());
+}
+
+function isWalkingRoute(value: unknown): value is WalkingRoute {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const route = value as Partial<WalkingRoute>;
+  return (
+    Number.isFinite(route.distanceMetres) &&
+    Number.isFinite(route.durationSeconds) &&
+    route.geometry?.type === "LineString" &&
+    Array.isArray(route.geometry.coordinates)
+  );
+}
 
 function storedModerationState(
   outcome: ImageModerationDecision["outcome"],
@@ -1372,10 +1397,40 @@ export default {
         const coordinates = startsAtFirstStop
           ? stopCoordinates
           : [[input.start.longitude, input.start.latitude], ...stopCoordinates];
-        const route = await requestOpenRouteServiceWalkingRoute(
-          env.OPENROUTESERVICE_API_KEY ?? "",
-          coordinates,
-        );
+        const cacheKey = createWalkingRouteCacheKey(request.url, coordinates);
+        let route: WalkingRoute | null = null;
+
+        try {
+          const cachedRoute = await caches.default.match(cacheKey);
+          if (cachedRoute) {
+            const cachedValue = await cachedRoute.json();
+            if (isWalkingRoute(cachedValue)) {
+              route = cachedValue;
+            }
+          }
+        } catch (error) {
+          // Cache availability is an optimisation only. Route planning must
+          // still work when an edge cache read is unavailable or stale.
+          console.warn("Walking route cache read failed", error);
+        }
+
+        if (!route) {
+          route = await requestOpenRouteServiceWalkingRoute(
+            env.OPENROUTESERVICE_API_KEY ?? "",
+            coordinates,
+          );
+
+          const cacheResponse = Response.json(route, {
+            headers: {
+              "cache-control": `public, max-age=${WALKING_ROUTE_CACHE_SECONDS}`,
+            },
+          });
+          ctx.waitUntil(
+            caches.default.put(cacheKey, cacheResponse).catch((error) => {
+              console.warn("Walking route cache write failed", error);
+            }),
+          );
+        }
 
         return Response.json(
           {
