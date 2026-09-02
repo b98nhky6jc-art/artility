@@ -7,7 +7,12 @@ import {
   MIN_ART_WALK_STOPS,
   useArtWalk,
 } from "./ArtWalkContext";
+import PlaceSearch from "./PlaceSearch";
 import { useArtilityLocation } from "./LocationContext";
+import {
+  resolveArtWalkStart,
+  type ArtWalkStartMode,
+} from "./artWalkStart";
 
 type WalkArtwork = {
   id: number;
@@ -45,14 +50,22 @@ export default function ArtWalk() {
   const [loadError, setLoadError] = useState("");
   const {
     deviceLocation: userLocation,
+    manualPlace,
     permissionState,
     error: locationError,
     beginLocationFlow,
   } = useArtilityLocation();
-  const [startMode, setStartMode] = useState<"current" | "first">("first");
+  const [startMode, setStartMode] = useState<ArtWalkStartMode>("first");
+  const [showPlaceSearch, setShowPlaceSearch] = useState(false);
   const [planning, setPlanning] = useState(false);
   const [route, setRoute] = useState<RoutePlanResponse | null>(null);
   const [routeError, setRouteError] = useState("");
+
+  function chooseStartMode(mode: ArtWalkStartMode) {
+    setStartMode(mode);
+    setRoute(null);
+    setRouteError("");
+  }
 
   useEffect(() => {
     let current = true;
@@ -118,11 +131,19 @@ export default function ArtWalk() {
       return;
     }
 
-    const firstArtwork = orderedArtworks[0];
-    const start = startMode === "current" ? userLocation : firstArtwork;
+    const firstArtwork = orderedArtworks[0] ?? null;
+    const start = resolveArtWalkStart(startMode, {
+      deviceLocation: userLocation,
+      manualPlace,
+      firstArtwork,
+    });
 
     if (!start) {
-      setRouteError("Your current location is unavailable. Start at the first artwork instead.");
+      setRouteError(
+        startMode === "place"
+          ? "Choose a town, city, postcode or place before planning your walk."
+          : "Your current location is unavailable. Start at the first artwork instead.",
+      );
       return;
     }
 
@@ -232,7 +253,7 @@ export default function ArtWalk() {
                   value="current"
                   checked={startMode === "current"}
                   disabled={!userLocation}
-                  onChange={() => setStartMode("current")}
+                  onChange={() => chooseStartMode("current")}
                 />
                 Current location
               </label>
@@ -242,10 +263,49 @@ export default function ArtWalk() {
                   name="walk-start"
                   value="first"
                   checked={startMode === "first"}
-                  onChange={() => setStartMode("first")}
+                  onChange={() => chooseStartMode("first")}
                 />
                 First selected artwork
               </label>
+              <label>
+                <input
+                  type="radio"
+                  name="walk-start"
+                  value="place"
+                  checked={startMode === "place"}
+                  disabled={!manualPlace}
+                  onChange={() => chooseStartMode("place")}
+                />
+                {manualPlace
+                  ? `Selected place: ${manualPlace.name}`
+                  : "Town, city, postcode or place"}
+              </label>
+              <button
+                type="button"
+                className="location-inline-action"
+                aria-expanded={showPlaceSearch}
+                onClick={() => setShowPlaceSearch((visible) => !visible)}
+              >
+                {showPlaceSearch
+                  ? "Close place search"
+                  : manualPlace
+                    ? "Change starting place"
+                    : "Choose a starting place"}
+              </button>
+              {showPlaceSearch && (
+                <PlaceSearch
+                  autoFocus
+                  className="art-walk-place-search"
+                  label="Start from a town, city, postcode or place"
+                  resultAction="Start walk here"
+                  selectedHint="Walk starting point"
+                  onCleared={() => chooseStartMode("first")}
+                  onSelected={() => {
+                    chooseStartMode("place");
+                    setShowPlaceSearch(false);
+                  }}
+                />
+              )}
               {!userLocation && (
                 <button
                   type="button"
@@ -254,7 +314,8 @@ export default function ArtWalk() {
                   onClick={() =>
                     beginLocationFlow({
                       feature: "walk",
-                      onLocated: () => setStartMode("current"),
+                      onLocated: () => chooseStartMode("current"),
+                      onSearchInstead: () => setShowPlaceSearch(true),
                     })
                   }
                 >
@@ -264,7 +325,10 @@ export default function ArtWalk() {
                 </button>
               )}
               {!userLocation && locationError && (
-                <small>{locationError.message} Your walk can still start at stop 1.</small>
+                <small>
+                  {locationError.message} Your walk can still start at stop 1 or
+                  a place you search for.
+                </small>
               )}
             </fieldset>
 

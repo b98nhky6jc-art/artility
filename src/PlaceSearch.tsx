@@ -7,10 +7,23 @@ type PlaceResult = ManualPlace & {
 
 type Props = {
   autoFocus?: boolean;
+  className?: string;
+  label?: string;
+  onCleared?: () => void;
   onSelected?: () => void;
+  resultAction?: string;
+  selectedHint?: string;
 };
 
-export default function PlaceSearch({ autoFocus = false, onSelected }: Props) {
+export default function PlaceSearch({
+  autoFocus = false,
+  className = "",
+  label = "Search by town, city, postcode or place",
+  onCleared,
+  onSelected,
+  resultAction = "Centre map here",
+  selectedHint = "Map centre only",
+}: Props) {
   const { manualPlace, selectManualPlace, clearManualPlace } =
     useArtilityLocation();
   const [query, setQuery] = useState("");
@@ -74,8 +87,8 @@ export default function PlaceSearch({ autoFocus = false, onSelected }: Props) {
   }
 
   return (
-    <div className="place-search">
-      <label htmlFor="place-search-input">Search by town, city, postcode or place</label>
+    <div className={`place-search ${className}`.trim()}>
+      <label htmlFor="place-search-input">{label}</label>
       <form className="place-search-row" onSubmit={(event) => void search(event)}>
         <input
           id="place-search-input"
@@ -104,6 +117,7 @@ export default function PlaceSearch({ autoFocus = false, onSelected }: Props) {
               clearManualPlace();
               setQuery("");
               setResults([]);
+              onCleared?.();
             }}
           >
             Clear
@@ -115,7 +129,7 @@ export default function PlaceSearch({ autoFocus = false, onSelected }: Props) {
         <div className="place-search-selected">
           <span aria-hidden="true">⌖</span>
           <strong>{manualPlace.name}</strong>
-          <small>Map centre only</small>
+          <small>{selectedHint}</small>
         </div>
       )}
 
@@ -131,7 +145,7 @@ export default function PlaceSearch({ autoFocus = false, onSelected }: Props) {
                 onClick={() => choosePlace(place)}
               >
                 <strong>{place.name}</strong>
-                <span>Centre map here</span>
+                <span>{resultAction}</span>
               </button>
             ))}
           {!loading && results.length > 0 && (

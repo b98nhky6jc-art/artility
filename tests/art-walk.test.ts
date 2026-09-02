@@ -6,6 +6,7 @@ import {
   normalizeArtWalkSelection,
   removeFromArtWalkSelection,
 } from "../src/artWalkSelection.ts";
+import { resolveArtWalkStart } from "../src/artWalkStart.ts";
 import {
   requestOpenRouteServiceWalkingRoute,
   RoutingError,
@@ -49,6 +50,28 @@ test("Art Walk selection adds, removes, caps and clears predictably", () => {
   assert.equal(addToArtWalkSelection(selection, 7).added, false);
   assert.deepEqual(removeFromArtWalkSelection(selection, 3), [1, 2, 4, 5, 6]);
   assert.deepEqual(normalizeArtWalkSelection([]), []);
+});
+
+test("Art Walk can start from a searched place without device location", () => {
+  const firstArtwork = { latitude: 53.8, longitude: -1.55 };
+  const manualPlace = { latitude: 53.795, longitude: -1.759 };
+
+  assert.deepEqual(
+    resolveArtWalkStart("place", {
+      deviceLocation: null,
+      firstArtwork,
+      manualPlace,
+    }),
+    manualPlace,
+  );
+  assert.deepEqual(
+    resolveArtWalkStart("first", {
+      deviceLocation: null,
+      firstArtwork,
+      manualPlace,
+    }),
+    firstArtwork,
+  );
 });
 
 test("openrouteservice response is normalized for the frontend", async () => {
