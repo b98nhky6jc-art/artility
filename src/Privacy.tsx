@@ -8,7 +8,7 @@ export default function Privacy() {
         <Link to="/" className="back-link">← Back to map</Link>
         <h1>Privacy policy</h1>
 
-        <p className="information-updated">Last updated 1 September 2026</p>
+        <p className="information-updated">Last updated 2 September 2026</p>
 
         <div className="information-list">
           <section>
@@ -31,6 +31,7 @@ export default function Privacy() {
           <section>
             <h2>Your device location</h2>
             <p>If you allow location access, Artility uses it to sort nearby artwork, centre the map, plan a walk and confirm that you are close enough to check in. Browser permission controls whether location is available. Artwork coordinates submitted to the map are public.</p>
+            <p>If a device location fails while you are exploring, our hosting provider may supply a city-level location inferred from your network connection. Artility labels this as approximate and does not use it for check-ins or placing artwork.</p>
           </section>
           <section>
             <h2>Service providers</h2>

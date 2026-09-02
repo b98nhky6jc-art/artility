@@ -38,6 +38,7 @@ import {
   reverseGeocodeArtworkLocation,
 } from "./location-metadata.js";
 import { searchPlaces } from "./place-search.js";
+import { approximateLocationFromRequestMetadata } from "./approximate-location.js";
 
 type ArtilityEnv = Env & {
   OPENROUTESERVICE_API_KEY?: string;
@@ -1327,6 +1328,28 @@ export default {
 
     if (url.pathname.startsWith("/api/auth/")) {
       return auth.handler(request);
+    }
+
+    if (
+      url.pathname === "/api/location/approximate" &&
+      request.method === "GET"
+    ) {
+      const location = approximateLocationFromRequestMetadata(request.cf);
+
+      if (!location) {
+        return Response.json(
+          { error: "Approximate location is unavailable" },
+          {
+            status: 404,
+            headers: { "cache-control": "private, no-store" },
+          },
+        );
+      }
+
+      return Response.json(
+        { location },
+        { headers: { "cache-control": "private, no-store" } },
+      );
     }
 
     if (url.pathname === "/api/places/search" && request.method === "GET") {

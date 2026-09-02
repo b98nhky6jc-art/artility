@@ -54,6 +54,7 @@ function App() {
   const {
     activeLocation,
     activeMode,
+    approximateLocation,
     deviceLocation,
     manualPlace,
     permissionState,
@@ -142,6 +143,8 @@ function App() {
             <span className="location-pill">
               📍 {activeMode === "device"
                 ? "Using your location"
+                : activeMode === "approximate" && approximateLocation
+                  ? `Near ${approximateLocation.name} (approximate)`
                 : activeMode === "manual" && manualPlace
                   ? manualPlace.name
                   : permissionState === "denied"
@@ -193,8 +196,10 @@ function App() {
                     : permissionState === "unavailable"
                       ? "Location unavailable"
                       : activeMode === "device"
-                    ? "Refresh my location"
-                    : "Use my location"}
+                        ? "Refresh my location"
+                        : activeMode === "approximate"
+                          ? "Try precise location"
+                          : "Use my location"}
               </button>
               <button
                 type="button"
@@ -242,6 +247,8 @@ function App() {
               <span className="eyebrow">
                 {activeMode === "device"
                   ? "EXPLORE AROUND YOU"
+                  : activeMode === "approximate"
+                    ? `EXPLORE NEAR ${approximateLocation?.name.toUpperCase() ?? "YOU"}`
                   : activeMode === "manual"
                     ? `EXPLORE ${manualPlace?.name.toUpperCase() ?? "A PLACE"}`
                     : "DISCOVER"}

@@ -13,6 +13,10 @@ export type UserLocation = {
   longitude: number;
 };
 
+export type ApproximateLocation = UserLocation & {
+  name: string;
+};
+
 export type LocationErrorCode =
   | "permission-denied"
   | "position-unavailable"
@@ -36,6 +40,11 @@ function requestGeolocationPosition(
   });
 }
 
+export function isTransientGeolocationError(error: unknown) {
+  const positionError = error as Partial<GeolocationPositionError> | null;
+  return positionError?.code === 2 || positionError?.code === 3;
+}
+
 export async function getCurrentPositionWithRetry(
   geolocation: GeolocationRequester,
   firstAttempt: PositionOptions,
@@ -44,13 +53,41 @@ export async function getCurrentPositionWithRetry(
   try {
     return await requestGeolocationPosition(geolocation, firstAttempt);
   } catch (error) {
-    const positionError = error as Partial<GeolocationPositionError> | null;
-
-    if (positionError?.code !== 2 && positionError?.code !== 3) {
+    if (!isTransientGeolocationError(error)) {
       throw error;
     }
 
     return requestGeolocationPosition(geolocation, retryAttempt);
+  }
+}
+
+export async function requestApproximateLocation(
+  fetcher: typeof fetch = fetch,
+): Promise<ApproximateLocation | null> {
+  try {
+    const response = await fetcher("/api/location/approximate", {
+      headers: { accept: "application/json" },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = (await response.json()) as { location?: unknown };
+    const location = data.location as Partial<ApproximateLocation> | null;
+    const name = typeof location?.name === "string" ? location.name.trim() : "";
+
+    if (!isValidLocation(location) || !name) {
+      return null;
+    }
+
+    return {
+      latitude: location.latitude,
+      longitude: location.longitude,
+      name,
+    };
+  } catch {
+    return null;
   }
 }
 

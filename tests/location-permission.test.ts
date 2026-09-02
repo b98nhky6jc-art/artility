@@ -6,8 +6,11 @@ import {
   getCurrentPositionWithRetry,
   getLocationEnablementGuidance,
   getLocationRecoveryGuidance,
+  isTransientGeolocationError,
   isValidLocation,
+  requestApproximateLocation,
 } from "../src/location.ts";
+import { approximateLocationFromRequestMetadata } from "../worker/approximate-location.ts";
 import {
   parsePlaceSearchResults,
   searchPlaces,
@@ -105,6 +108,12 @@ test("permission denial is not retried", async () => {
   assert.equal(attempts, 1);
 });
 
+test("only unavailable and timed-out readings permit an approximate fallback", () => {
+  assert.equal(isTransientGeolocationError({ code: 2 }), true);
+  assert.equal(isTransientGeolocationError({ code: 3 }), true);
+  assert.equal(isTransientGeolocationError({ code: 1 }), false);
+});
+
 test("coordinates are validated independently from permission", () => {
   assert.equal(isValidLocation({ latitude: 53.8, longitude: -1.55 }), true);
   assert.equal(isValidLocation({ latitude: 91, longitude: -1.55 }), false);
@@ -126,6 +135,61 @@ test("position recovery guidance points desktop browsers to device settings", ()
     getLocationRecoveryGuidance("Mozilla Windows Chrome/140"),
     /Windows Settings.*Location/,
   );
+});
+
+test("request metadata provides a labelled approximate fallback", () => {
+  assert.deepEqual(
+    approximateLocationFromRequestMetadata({
+      latitude: "53.7974",
+      longitude: "-1.5438",
+      city: "Leeds",
+      region: "England",
+    }),
+    { latitude: 53.7974, longitude: -1.5438, name: "Leeds" },
+  );
+  assert.equal(
+    approximateLocationFromRequestMetadata({
+      latitude: "",
+      longitude: "-1.5438",
+      city: "Leeds",
+    }),
+    null,
+  );
+});
+
+test("the browser accepts only a valid approximate location response", async () => {
+  const location = await requestApproximateLocation(async () =>
+    Response.json({
+      location: {
+        latitude: 53.7974,
+        longitude: -1.5438,
+        name: "Leeds",
+      },
+    }),
+  );
+
+  assert.deepEqual(location, {
+    latitude: 53.7974,
+    longitude: -1.5438,
+    name: "Leeds",
+  });
+
+  const invalid = await requestApproximateLocation(async () =>
+    Response.json({
+      location: { latitude: 200, longitude: -1.5438, name: "Leeds" },
+    }),
+  );
+  assert.equal(invalid, null);
+});
+
+test("the privacy policy explains the limited approximate fallback", async () => {
+  const privacy = await readFile(
+    new URL("../src/Privacy.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(privacy, /city-level location inferred from your network connection/);
+  assert.match(privacy, /does not use it for check-ins or placing artwork/);
 });
 
 test("place results discard invalid coordinates", () => {

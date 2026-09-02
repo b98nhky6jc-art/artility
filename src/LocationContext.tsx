@@ -12,7 +12,10 @@ import LocationPrompt, { type LocationFeature } from "./LocationPrompt";
 import {
   describeGeolocationError,
   getCurrentPositionWithRetry,
+  isTransientGeolocationError,
   isValidLocation,
+  requestApproximateLocation,
+  type ApproximateLocation,
   type LocationError,
   type LocationPermissionState,
   type UserLocation,
@@ -31,8 +34,9 @@ type LocationDialogRequest = {
 type LocationContextValue = {
   permissionState: LocationPermissionState;
   deviceLocation: UserLocation | null;
+  approximateLocation: ApproximateLocation | null;
   manualPlace: ManualPlace | null;
-  activeMode: "device" | "manual" | null;
+  activeMode: "device" | "approximate" | "manual" | null;
   activeLocation: UserLocation | null;
   error: LocationError | null;
   beginLocationFlow: (request: LocationDialogRequest) => void;
@@ -63,8 +67,11 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       return permissions ? "checking" : "prompt";
     });
   const [deviceLocation, setDeviceLocation] = useState<UserLocation | null>(null);
+  const [approximateLocation, setApproximateLocation] =
+    useState<ApproximateLocation | null>(null);
   const [manualPlace, setManualPlace] = useState<ManualPlace | null>(null);
-  const [activeMode, setActiveMode] = useState<"device" | "manual" | null>(null);
+  const [activeMode, setActiveMode] =
+    useState<"device" | "approximate" | "manual" | null>(null);
   const [error, setError] = useState<LocationError | null>(() =>
     typeof navigator !== "undefined" && !navigator.geolocation
       ? {
@@ -205,6 +212,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
             }
 
             setDeviceLocation(location);
+            setApproximateLocation(null);
             setManualPlace(null);
             setActiveMode("device");
             setPermissionState("granted");
@@ -212,7 +220,24 @@ export function LocationProvider({ children }: { children: ReactNode }) {
             onLocated?.(location);
             return location;
           },
-          (geolocationError) => {
+          async (geolocationError) => {
+            if (
+              feature === "explore" &&
+              isTransientGeolocationError(geolocationError)
+            ) {
+              const approximate = await requestApproximateLocation();
+
+              if (approximate) {
+                setApproximateLocation(approximate);
+                setManualPlace(null);
+                setActiveMode("approximate");
+                setPermissionState("granted");
+                setError(null);
+                onLocated?.(approximate);
+                return approximate;
+              }
+            }
+
             const friendlyError = describeGeolocationError(
               geolocationError as Pick<GeolocationPositionError, "code">,
             );
@@ -234,18 +259,22 @@ export function LocationProvider({ children }: { children: ReactNode }) {
 
   const beginLocationFlow = useCallback(
     (request: LocationDialogRequest) => {
-      if (permissionState === "granted" && deviceLocation) {
+      if (
+        permissionState === "granted" &&
+        (deviceLocation || activeMode === "approximate")
+      ) {
         void requestDeviceLocation(request.onLocated, request.feature);
         return;
       }
 
       setDialogRequest(request);
     },
-    [deviceLocation, permissionState, requestDeviceLocation],
+    [activeMode, deviceLocation, permissionState, requestDeviceLocation],
   );
 
   const selectManualPlace = useCallback((place: ManualPlace) => {
     setManualPlace(place);
+    setApproximateLocation(null);
     setActiveMode("manual");
   }, []);
 
@@ -258,11 +287,14 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     () => ({
       permissionState,
       deviceLocation,
+      approximateLocation,
       manualPlace,
       activeMode,
       activeLocation:
         activeMode === "device"
           ? deviceLocation
+          : activeMode === "approximate"
+            ? approximateLocation
           : activeMode === "manual"
             ? manualPlace
             : null,
@@ -274,6 +306,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     }),
     [
       activeMode,
+      approximateLocation,
       beginLocationFlow,
       clearManualPlace,
       deviceLocation,
