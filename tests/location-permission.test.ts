@@ -22,7 +22,7 @@ test("geolocation failures have distinct, friendly messages", () => {
   assert.match(describeGeolocationError({ code: 3 }).message, /took too long/i);
 });
 
-test("position unavailable retries once with a fresh accurate reading", async () => {
+test("transient location failures retry once with a fresh accurate reading", async () => {
   const attempts: PositionOptions[] = [];
   const expectedPosition = {
     coords: { latitude: 53.8, longitude: -1.55 },
@@ -54,6 +54,37 @@ test("position unavailable retries once with a fresh accurate reading", async ()
   assert.equal(attempts.length, 2);
   assert.equal(attempts[1]?.enableHighAccuracy, true);
   assert.equal(attempts[1]?.maximumAge, 0);
+});
+
+test("a desktop location timeout also receives the longer retry", async () => {
+  let attempts = 0;
+  const expectedPosition = {
+    coords: { latitude: 53.8, longitude: -1.55 },
+  } as GeolocationPosition;
+  const geolocation = {
+    getCurrentPosition(
+      success: PositionCallback,
+      failure: PositionErrorCallback,
+    ) {
+      attempts += 1;
+
+      if (attempts === 1) {
+        failure({ code: 3 } as GeolocationPositionError);
+        return;
+      }
+
+      success(expectedPosition);
+    },
+  };
+
+  const position = await getCurrentPositionWithRetry(
+    geolocation,
+    { timeout: 10_000 },
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 15_000 },
+  );
+
+  assert.equal(position, expectedPosition);
+  assert.equal(attempts, 2);
 });
 
 test("permission denial is not retried", async () => {

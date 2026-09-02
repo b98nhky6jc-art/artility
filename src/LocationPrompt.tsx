@@ -128,7 +128,8 @@ export default function LocationPrompt({
           </div>
         )}
 
-        {retryableError && error?.code === "position-unavailable" && (
+        {retryableError &&
+          (error?.code === "position-unavailable" || error?.code === "timeout") && (
           <div className="location-guidance" role="status">
             {getLocationRecoveryGuidance(navigator.userAgent)}
           </div>

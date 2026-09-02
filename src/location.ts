@@ -46,7 +46,7 @@ export async function getCurrentPositionWithRetry(
   } catch (error) {
     const positionError = error as Partial<GeolocationPositionError> | null;
 
-    if (positionError?.code !== 2) {
+    if (positionError?.code !== 2 && positionError?.code !== 3) {
       throw error;
     }
 
