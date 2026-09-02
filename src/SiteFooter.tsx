@@ -8,6 +8,15 @@ export default function SiteFooter() {
         <Link to="/faq">FAQ</Link>
         <Link to="/privacy">Privacy policy</Link>
         <Link to="/copyright">Copyright</Link>
+        <a
+          href="https://chat.whatsapp.com/GA0tCNKFqsRKjSaNgodPVw"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="community-link"
+          aria-label="Help shape Artility on WhatsApp (opens in a new tab)"
+        >
+          Help shape Artility on WhatsApp ↗
+        </a>
       </nav>
       <p>© {new Date().getFullYear()} Artility</p>
     </footer>

@@ -40,7 +40,7 @@ export default defineConfig({
             purpose: "any",
           },
           {
-            src: "/maskable-icon-512x512.png",
+            src: "/artility-maskable-512-v2.png",
             sizes: "512x512",
             type: "image/png",
             purpose: "maskable",

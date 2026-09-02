@@ -119,6 +119,15 @@ main {
   text-decoration: underline;
 }
 
+.site-footer .community-link {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.site-footer .community-link:hover {
+  color: var(--ink);
+}
+
 .site-footer p {
   margin: 0;
 }
