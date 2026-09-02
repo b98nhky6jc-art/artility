@@ -339,6 +339,14 @@ main {
   letter-spacing: -4px;
 }
 
+.hero-title span {
+  display: block;
+}
+
+.hero-title span + span {
+  margin-top: 0.12em;
+}
+
 .hero p {
   max-width: 560px;
 
@@ -346,6 +354,17 @@ main {
 
   font-size: 17px;
   line-height: 1.6;
+}
+
+.hero-community-link {
+  color: var(--teal-strong);
+  font-weight: 800;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+.hero-community-link:hover {
+  color: var(--ink);
 }
 
 .location-pill {

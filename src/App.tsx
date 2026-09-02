@@ -153,15 +153,23 @@ function App() {
                         : "Explore anywhere"}
             </span>
 
-            <h2>
-              Find the art
-              <br />
-              around you.
+            <h2 className="hero-title">
+              <span>Explore your community.</span>
+              <span>Take the long way home.</span>
             </h2>
 
-            <p>
+            <p className="hero-intro">
               Discover artists around you, head out for a walk, collect what you find, and
-  add your own discoveries to help others explore too.
+              add your own discoveries to help others explore too.{" "}
+              <a
+                className="hero-community-link"
+                href="https://chat.whatsapp.com/GA0tCNKFqsRKjSaNgodPVw"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Join the Artility WhatsApp community to help shape improvements (opens in a new tab)"
+              >
+                Help shape Artility in our WhatsApp community ↗
+              </a>
             </p>
 
             <div className="hero-actions">
