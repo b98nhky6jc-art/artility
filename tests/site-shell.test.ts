@@ -23,7 +23,8 @@ test("homepage leads with the community message and WhatsApp invitation", async 
     "utf8",
   );
 
-  assert.match(homepage, /Explore your community\./);
+  assert.match(homepage, /Find local art\./);
+  assert.match(homepage, /Explore your neighbourhood\./);
   assert.match(homepage, /Take the long way home\./);
   assert.match(homepage, /Help shape Artility in our WhatsApp community/);
   assert.match(

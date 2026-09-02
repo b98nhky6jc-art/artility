@@ -25,6 +25,35 @@ export type LocationError = {
   message: string;
 };
 
+type GeolocationRequester = Pick<Geolocation, "getCurrentPosition">;
+
+function requestGeolocationPosition(
+  geolocation: GeolocationRequester,
+  options: PositionOptions,
+) {
+  return new Promise<GeolocationPosition>((resolve, reject) => {
+    geolocation.getCurrentPosition(resolve, reject, options);
+  });
+}
+
+export async function getCurrentPositionWithRetry(
+  geolocation: GeolocationRequester,
+  firstAttempt: PositionOptions,
+  retryAttempt: PositionOptions,
+) {
+  try {
+    return await requestGeolocationPosition(geolocation, firstAttempt);
+  } catch (error) {
+    const positionError = error as Partial<GeolocationPositionError> | null;
+
+    if (positionError?.code !== 2) {
+      throw error;
+    }
+
+    return requestGeolocationPosition(geolocation, retryAttempt);
+  }
+}
+
 export function isValidLocation(value: unknown): value is UserLocation {
   if (!value || typeof value !== "object") {
     return false;
@@ -53,7 +82,8 @@ export function describeGeolocationError(
   if (error.code === 2) {
     return {
       code: "position-unavailable",
-      message: "We couldn’t work out your location just now.",
+      message:
+        "Your browser allowed location access, but your device didn’t return a position.",
     };
   }
 
@@ -90,4 +120,22 @@ export function getLocationEnablementGuidance(userAgent: string) {
   }
 
   return "Open your browser’s site settings for Artility, allow Location, then reload this page.";
+}
+
+export function getLocationRecoveryGuidance(userAgent: string) {
+  const agent = userAgent.toLowerCase();
+
+  if (/iphone|ipad|ipod/.test(agent)) {
+    return "Check that Location Services and Precise Location are on for your browser, then try again.";
+  }
+
+  if (/macintosh|mac os x/.test(agent)) {
+    return "On your Mac, open System Settings → Privacy & Security → Location Services and make sure Location Services and your browser are enabled, then try again.";
+  }
+
+  if (/windows/.test(agent)) {
+    return "Open Windows Settings → Privacy & security → Location, turn Location services on, then try again.";
+  }
+
+  return "Check that your device’s Location Services are on for this browser, then try again.";
 }

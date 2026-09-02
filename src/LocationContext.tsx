@@ -11,6 +11,7 @@ import {
 import LocationPrompt, { type LocationFeature } from "./LocationPrompt";
 import {
   describeGeolocationError,
+  getCurrentPositionWithRetry,
   isValidLocation,
   type LocationError,
   type LocationPermissionState,
@@ -169,8 +170,24 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       setPermissionState("requesting");
       setError(null);
 
-      pendingRequest.current = new Promise<UserLocation | null>((resolve) => {
-        navigator.geolocation.getCurrentPosition(
+      const needsPreciseLocation = feature === "checkin" || feature === "upload";
+      const firstAttempt: PositionOptions = {
+        enableHighAccuracy: needsPreciseLocation,
+        maximumAge: needsPreciseLocation ? 0 : 5 * 60 * 1000,
+        timeout: 10_000,
+      };
+      const retryAttempt: PositionOptions = {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 15_000,
+      };
+
+      pendingRequest.current = getCurrentPositionWithRetry(
+        navigator.geolocation,
+        firstAttempt,
+        retryAttempt,
+      )
+        .then(
           (position) => {
             const location = {
               latitude: position.coords.latitude,
@@ -181,10 +198,10 @@ export function LocationProvider({ children }: { children: ReactNode }) {
               setPermissionState("error");
               setError({
                 code: "position-unavailable",
-                message: "We couldn’t work out your location just now.",
+                message:
+                  "Your browser allowed location access, but your device didn’t return a position.",
               });
-              resolve(null);
-              return;
+              return null;
             }
 
             setDeviceLocation(location);
@@ -193,28 +210,22 @@ export function LocationProvider({ children }: { children: ReactNode }) {
             setPermissionState("granted");
             setError(null);
             onLocated?.(location);
-            resolve(location);
+            return location;
           },
           (geolocationError) => {
-            const friendlyError = describeGeolocationError(geolocationError);
+            const friendlyError = describeGeolocationError(
+              geolocationError as Pick<GeolocationPositionError, "code">,
+            );
             const nextState =
               friendlyError.code === "permission-denied" ? "denied" : "error";
             setPermissionState(nextState);
             setError(friendlyError);
-            resolve(null);
+            return null;
           },
-          {
-            enableHighAccuracy: feature === "checkin" || feature === "upload",
-            maximumAge:
-              feature === "checkin" || feature === "upload"
-                ? 0
-                : 5 * 60 * 1000,
-            timeout: 10_000,
-          },
-        );
-      }).finally(() => {
-        pendingRequest.current = null;
-      });
+        )
+        .finally(() => {
+          pendingRequest.current = null;
+        });
 
       return pendingRequest.current;
     },

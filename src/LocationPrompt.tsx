@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   getLocationEnablementGuidance,
+  getLocationRecoveryGuidance,
   type LocationError,
   type LocationPermissionState,
 } from "./location";
@@ -124,6 +125,12 @@ export default function LocationPrompt({
         {showGuidance && (
           <div className="location-guidance" role="status">
             {getLocationEnablementGuidance(navigator.userAgent)}
+          </div>
+        )}
+
+        {retryableError && error?.code === "position-unavailable" && (
+          <div className="location-guidance" role="status">
+            {getLocationRecoveryGuidance(navigator.userAgent)}
           </div>
         )}
 

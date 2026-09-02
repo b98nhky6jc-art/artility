@@ -154,7 +154,8 @@ function App() {
             </span>
 
             <h2 className="hero-title">
-              <span>Explore your community.</span>
+              <span>Find local art.</span>
+              <span>Explore your neighbourhood.</span>
               <span>Take the long way home.</span>
             </h2>
 
