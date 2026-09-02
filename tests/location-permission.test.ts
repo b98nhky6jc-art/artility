@@ -90,6 +90,29 @@ test("a desktop location timeout also receives the longer retry", async () => {
   assert.equal(attempts, 2);
 });
 
+test("Explore can skip a second timeout and move to its approximate fallback", async () => {
+  let attempts = 0;
+  const geolocation = {
+    getCurrentPosition(
+      _success: PositionCallback,
+      failure: PositionErrorCallback,
+    ) {
+      attempts += 1;
+      failure({ code: 3 } as GeolocationPositionError);
+    },
+  };
+
+  await assert.rejects(
+    getCurrentPositionWithRetry(
+      geolocation,
+      { timeout: 10_000 },
+      { timeout: 15_000 },
+      [2],
+    ),
+  );
+  assert.equal(attempts, 1);
+});
+
 test("permission denial is not retried", async () => {
   let attempts = 0;
   const geolocation = {

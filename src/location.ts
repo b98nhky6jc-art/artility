@@ -49,11 +49,14 @@ export async function getCurrentPositionWithRetry(
   geolocation: GeolocationRequester,
   firstAttempt: PositionOptions,
   retryAttempt: PositionOptions,
+  retryCodes: readonly number[] = [2, 3],
 ) {
   try {
     return await requestGeolocationPosition(geolocation, firstAttempt);
   } catch (error) {
-    if (!isTransientGeolocationError(error)) {
+    const positionError = error as Partial<GeolocationPositionError> | null;
+
+    if (!positionError?.code || !retryCodes.includes(positionError.code)) {
       throw error;
     }
 

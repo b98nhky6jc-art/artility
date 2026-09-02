@@ -193,6 +193,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         navigator.geolocation,
         firstAttempt,
         retryAttempt,
+        feature === "explore" ? [2] : [2, 3],
       )
         .then(
           (position) => {
