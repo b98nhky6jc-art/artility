@@ -16,6 +16,7 @@ type Props = {
   numberedStops?: boolean;
   routeGeometry?: RouteLineString | null;
   userLocation?: { latitude: number; longitude: number } | null;
+  focusLocation?: { latitude: number; longitude: number } | null;
   preserveUserLocation?: boolean;
 };
 
@@ -77,11 +78,13 @@ export default function ArtworkMap({
   numberedStops = false,
   routeGeometry = null,
   userLocation = null,
+  focusLocation = null,
   preserveUserLocation = false,
 }: Props) {
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<maplibregl.Marker[]>([]);
+  const userMarkerRef = useRef<maplibregl.Marker | null>(null);
 
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) {
@@ -98,17 +101,6 @@ export default function ArtworkMap({
 
     map.addControl(new maplibregl.NavigationControl(), "top-right");
 
-    const geolocate = new maplibregl.GeolocateControl({
-      positionOptions: {
-        enableHighAccuracy: true,
-      },
-      trackUserLocation: true,
-      showUserLocation: true,
-      showAccuracyCircle: true,
-    });
-
-    map.addControl(geolocate, "top-right");
-
     map.on("moveend", () => {
       const center = map.getCenter();
       saveLastMapViewport([center.lng, center.lat], map.getZoom());
@@ -119,18 +111,37 @@ export default function ArtworkMap({
     return () => {
       markersRef.current.forEach((marker) => marker.remove());
       markersRef.current = [];
+      userMarkerRef.current?.remove();
+      userMarkerRef.current = null;
 
       map.remove();
       mapRef.current = null;
     };
   }, []);
   useEffect(() => {
-    if (mapRef.current && userLocation) {
+    if (mapRef.current && focusLocation) {
       mapRef.current.jumpTo({
-        center: [userLocation.longitude, userLocation.latitude],
-        zoom: 12,
+        center: [focusLocation.longitude, focusLocation.latitude],
+        zoom: 13,
       });
     }
+  }, [focusLocation]);
+
+  useEffect(() => {
+    userMarkerRef.current?.remove();
+    userMarkerRef.current = null;
+
+    if (!mapRef.current || !userLocation) {
+      return;
+    }
+
+    const markerElement = document.createElement("div");
+    markerElement.className = "artility-user-location-marker";
+    markerElement.setAttribute("aria-label", "Your approximate location");
+
+    userMarkerRef.current = new maplibregl.Marker({ element: markerElement })
+      .setLngLat([userLocation.longitude, userLocation.latitude])
+      .addTo(mapRef.current);
   }, [userLocation]);
 
   useEffect(() => {
@@ -204,7 +215,7 @@ export default function ArtworkMap({
         });
       }
     }
-  }, [artworks, numberedStops, preserveUserLocation]);
+  }, [artworks, focusLocation, numberedStops, preserveUserLocation]);
 
   useEffect(() => {
     const map = mapRef.current;

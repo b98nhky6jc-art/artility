@@ -3,9 +3,9 @@ import { Link } from "react-router";
 import "./App.css";
 import {
   getDistanceInMetres,
-  requestBrowserLocation,
   type UserLocation,
 } from "./artworkDiscovery";
+import { useArtilityLocation } from "./LocationContext";
 
 type Artist = {
   id: number | "unknown";
@@ -79,11 +79,7 @@ export default function Artists() {
   const [artists, setArtists] = useState<Artist[]>([]);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<ArtistSort>("newest");
-  const [userLocation, setUserLocation] =
-    useState<UserLocation | null>(null);
-  const [locationStatus, setLocationStatus] = useState<
-    "requesting" | "ready" | "unavailable"
-  >("requesting");
+  const { deviceLocation: userLocation } = useArtilityLocation();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const sortWasChosen = useRef(false);
@@ -114,28 +110,10 @@ export default function Artists() {
   }, []);
 
   useEffect(() => {
-    let isCurrent = true;
-
-    void requestBrowserLocation().then((location) => {
-      if (!isCurrent) {
-        return;
-      }
-
-      if (location) {
-        setUserLocation(location);
-        setLocationStatus("ready");
-        if (!sortWasChosen.current) {
-          setSort("closest");
-        }
-      } else {
-        setLocationStatus("unavailable");
-      }
-    });
-
-    return () => {
-      isCurrent = false;
-    };
-  }, []);
+    if (userLocation && !sortWasChosen.current) {
+      setSort("closest");
+    }
+  }, [userLocation]);
 
   const visibleArtists = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -249,11 +227,6 @@ export default function Artists() {
               </select>
             </div>
 
-            {locationStatus === "requesting" && (
-              <p className="artist-sort-status" aria-live="polite">
-                Getting your location for distance sorting…
-              </p>
-            )}
           </section>
 
           <section

@@ -3,11 +3,11 @@ import { Link } from "react-router";
 import ArtworkMap, { type RouteLineString } from "./ArtworkMap";
 import { getArtworkDisplayTitle } from "./artworkDisplay";
 import { getArtworkLocality } from "../shared/artwork-location";
-import { requestBrowserLocation, type UserLocation } from "./artworkDiscovery";
 import {
   MIN_ART_WALK_STOPS,
   useArtWalk,
 } from "./ArtWalkContext";
+import { useArtilityLocation } from "./LocationContext";
 
 type WalkArtwork = {
   id: number;
@@ -43,32 +43,16 @@ export default function ArtWalk() {
   const [artworks, setArtworks] = useState<WalkArtwork[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
-  const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
-  const [locationResolved, setLocationResolved] = useState(false);
+  const {
+    deviceLocation: userLocation,
+    permissionState,
+    error: locationError,
+    beginLocationFlow,
+  } = useArtilityLocation();
   const [startMode, setStartMode] = useState<"current" | "first">("first");
   const [planning, setPlanning] = useState(false);
   const [route, setRoute] = useState<RoutePlanResponse | null>(null);
   const [routeError, setRouteError] = useState("");
-
-  useEffect(() => {
-    let current = true;
-
-    void requestBrowserLocation().then((location) => {
-      if (!current) {
-        return;
-      }
-
-      setUserLocation(location);
-      setLocationResolved(true);
-      if (location) {
-        setStartMode("current");
-      }
-    });
-
-    return () => {
-      current = false;
-    };
-  }, []);
 
   useEffect(() => {
     let current = true;
@@ -262,8 +246,25 @@ export default function ArtWalk() {
                 />
                 First selected artwork
               </label>
-              {locationResolved && !userLocation && (
-                <small>Current location is unavailable; your walk can start at stop 1.</small>
+              {!userLocation && (
+                <button
+                  type="button"
+                  className="location-inline-action"
+                  disabled={permissionState === "checking" || permissionState === "requesting"}
+                  onClick={() =>
+                    beginLocationFlow({
+                      feature: "walk",
+                      onLocated: () => setStartMode("current"),
+                    })
+                  }
+                >
+                  {permissionState === "requesting"
+                    ? "Finding your location…"
+                    : "Use my location as the start"}
+                </button>
+              )}
+              {!userLocation && locationError && (
+                <small>{locationError.message} Your walk can still start at stop 1.</small>
               )}
             </fieldset>
 

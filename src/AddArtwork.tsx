@@ -8,6 +8,7 @@ import { authClient } from "./lib/auth-client";
 import EmailVerificationNotice from "./EmailVerificationNotice";
 import { canUserContribute } from "./emailVerification";
 import ArtistAutocomplete from "./ArtistAutocomplete";
+import { useArtilityLocation } from "./LocationContext";
 import {
   INFRASTRUCTURE_TYPES,
   type InfrastructureType,
@@ -289,6 +290,11 @@ export default function AddArtwork() {
   const navigate = useNavigate();
   const { data: session, isPending } = authClient.useSession();
   const canContribute = canUserContribute(session?.user);
+  const {
+    permissionState,
+    error: locationError,
+    beginLocationFlow,
+  } = useArtilityLocation();
 
 
   useEffect(() => {
@@ -458,19 +464,15 @@ export default function AddArtwork() {
   function useCurrentLocation() {
     setError("");
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setLatitude(position.coords.latitude);
-        setLongitude(position.coords.longitude);
+    beginLocationFlow({
+      feature: "upload",
+      onLocated: (location) => {
+        setLatitude(location.latitude);
+        setLongitude(location.longitude);
         setLocationSource("device");
+        void checkNearbyArtworks(location.latitude, location.longitude);
       },
-      () => {
-        setError("Could not get your current location.");
-      },
-      {
-        enableHighAccuracy: true,
-      },
-    );
+    });
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -931,11 +933,27 @@ export default function AddArtwork() {
                       type="button"
                       className="secondary-button"
                       onClick={useCurrentLocation}
+                      disabled={permissionState === "checking" || permissionState === "requesting"}
                     >
-                      📍 Use my current location
+                      📍 {permissionState === "denied"
+                        ? "How to enable location"
+                        : permissionState === "requesting"
+                          ? "Finding your location…"
+                          : "Use my current location"}
                     </button>
                   ) : null}
+                  {latitude === null && longitude === null && locationError && (
+                    <p className="location-inline-message" role="status">
+                      {locationError.message}
+                    </p>
+                  )}
                 </div>
+
+                {error && (
+                  <p className="form-error" role="alert">
+                    {error}
+                  </p>
+                )}
 
                 <div className="form-actions">
                   <button

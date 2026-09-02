@@ -11,6 +11,7 @@ import { canUserContribute } from "./emailVerification";
 import ArtistAutocomplete from "./ArtistAutocomplete";
 import { useAdminAccess } from "./useModeratorAccess";
 import AddToWalkButton from "./AddToWalkButton";
+import { useArtilityLocation } from "./LocationContext";
 import {
   formatInfrastructureType,
   INFRASTRUCTURE_TYPES,
@@ -157,17 +158,17 @@ export default function ArtworkDetail() {
   const [checkedIn, setCheckedIn] = useState(false);
 
   const [checkingIn, setCheckingIn] = useState(false);
+  const [checkinError, setCheckinError] = useState("");
 
-  const [distanceMetres, setDistanceMetres] = useState<number | null>(null);
-
-  const [locationError, setLocationError] = useState(() =>
-    navigator.geolocation
-      ? ""
-      : "Location is not supported by this browser.",
-  );
   const { data: session } = authClient.useSession();
   const { isAdmin } = useAdminAccess(session?.user.id);
   const canContribute = canUserContribute(session?.user);
+  const {
+    deviceLocation,
+    permissionState,
+    error: locationError,
+    beginLocationFlow,
+  } = useArtilityLocation();
 
   const [editing, setEditing] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -433,36 +434,17 @@ export default function ArtworkDetail() {
     });
   }, [photos]);
 
-  useEffect(() => {
-    if (!artwork) {
-      return;
-    }
-
-    if (!navigator.geolocation) {
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const distance = calculateDistanceMetres(
-          position.coords.latitude,
-          position.coords.longitude,
-          artwork.latitude,
-          artwork.longitude,
-        );
-
-        setDistanceMetres(Math.round(distance));
-        setLocationError("");
-      },
-      () => {
-        setLocationError("Location unavailable");
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-      },
-    );
-  }, [artwork]);
+  const distanceMetres =
+    artwork && deviceLocation
+      ? Math.round(
+          calculateDistanceMetres(
+            deviceLocation.latitude,
+            deviceLocation.longitude,
+            artwork.latitude,
+            artwork.longitude,
+          ),
+        )
+      : null;
 
   const isLocalhost = window.location.hostname === "localhost";
 
@@ -491,6 +473,7 @@ export default function ArtworkDetail() {
     }
 
     setCheckingIn(true);
+    setCheckinError("");
 
     try {
       const response = await fetch(`/api/artworks/${artwork.id}/checkin`, {
@@ -506,7 +489,7 @@ export default function ArtworkDetail() {
       setCheckedIn(Boolean(data.checked_in));
     } catch (error) {
       console.error(error);
-      alert("Couldn't check in. Try again.");
+      setCheckinError("We couldn’t check you in just now. Try again.");
     } finally {
       setCheckingIn(false);
     }
@@ -863,11 +846,32 @@ export default function ArtworkDetail() {
               </div>
             )}
 
-            {locationError && (
-              <div className="proximity proximity-far">
-                <strong>📍 Location unavailable</strong>
-                <span>{locationError}</span>
+            {canContribute && !checkedIn && distanceMetres === null && (
+              <div className="checkin-location-card">
+                <div>
+                  <strong>Location is required to check in</strong>
+                  <span>
+                    We use your device location once to confirm you’re close to this artwork.
+                  </span>
+                  {locationError && <small>{locationError.message}</small>}
+                </div>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={permissionState === "checking" || permissionState === "requesting"}
+                  onClick={() => beginLocationFlow({ feature: "checkin" })}
+                >
+                  {permissionState === "denied"
+                    ? "How to enable location"
+                    : permissionState === "requesting"
+                      ? "Finding you…"
+                      : "Check my location"}
+                </button>
               </div>
+            )}
+
+            {checkinError && (
+              <p className="form-error" role="alert">{checkinError}</p>
             )}
 
             {artwork.description && (

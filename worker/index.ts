@@ -37,10 +37,12 @@ import {
   refreshArtworkLocationMetadata,
   reverseGeocodeArtworkLocation,
 } from "./location-metadata.js";
+import { searchPlaces } from "./place-search.js";
 
 type ArtilityEnv = Env & {
   OPENROUTESERVICE_API_KEY?: string;
   LOCATION_GEOCODER_URL?: string;
+  LOCATION_SEARCH_GEOCODER_URL?: string;
 };
 
 const MAX_PHOTOS_PER_ARTWORK = 5;
@@ -1325,6 +1327,52 @@ export default {
 
     if (url.pathname.startsWith("/api/auth/")) {
       return auth.handler(request);
+    }
+
+    if (url.pathname === "/api/places/search" && request.method === "GET") {
+      const query = (url.searchParams.get("q") ?? "")
+        .trim()
+        .replace(/\s+/g, " ")
+        .slice(0, 120);
+
+      if (query.length < 2) {
+        return Response.json(
+          { error: "Enter at least two characters", places: [] },
+          { status: 400 },
+        );
+      }
+
+      try {
+        const cacheUrl = new URL("/api/internal/place-search-cache", url);
+        cacheUrl.searchParams.set("q", query.toLocaleLowerCase("en"));
+        const cacheKey = new Request(cacheUrl.toString());
+        const cachedResponse = await caches.default.match(cacheKey);
+
+        if (cachedResponse) {
+          return cachedResponse;
+        }
+
+        const places = await searchPlaces(query, {
+          endpoint: env.LOCATION_SEARCH_GEOCODER_URL,
+        });
+
+        const response = Response.json(
+          { places },
+          {
+            headers: {
+              "cache-control": "public, max-age=300, s-maxage=86400",
+            },
+          },
+        );
+        ctx.waitUntil(caches.default.put(cacheKey, response.clone()));
+        return response;
+      } catch (error) {
+        console.error("Place search failed", { query, error });
+        return Response.json(
+          { error: "Place search is temporarily unavailable", places: [] },
+          { status: 502 },
+        );
+      }
     }
 
     if (url.pathname === "/api/routes/plan" && request.method === "POST") {

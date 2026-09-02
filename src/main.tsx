@@ -24,36 +24,39 @@ import Faq from "./Faq.tsx";
 import Privacy from "./Privacy.tsx";
 import Copyright from "./Copyright.tsx";
 import ScrollToTop from "./ScrollToTop.tsx";
+import { LocationProvider } from "./LocationContext.tsx";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
-      <ArtWalkProvider>
-        <ScrollToTop />
-        <SiteHeader />
+      <LocationProvider>
+        <ArtWalkProvider>
+          <ScrollToTop />
+          <SiteHeader />
 
-        <Routes>
-          <Route path="/signup" element={<Signup />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/" element={<App />} />
-          <Route path="/artwork/:id" element={<ArtworkDetail />} />
-          <Route path="/art-walk" element={<ArtWalk />} />
-          <Route path="/my-finds" element={<MyFinds />} />
-          <Route path="/add-artwork" element={<AddArtwork />} />
-          <Route path="/contact" element={<Contact />} />
-          <Route path="/faq" element={<Faq />} />
-          <Route path="/privacy" element={<Privacy />} />
-          <Route path="/copyright" element={<Copyright />} />
-          <Route path="/verify-email" element={<VerifyEmail />} />
-          <Route path="/artists" element={<Artists />} />
-          <Route path="/artist/:id" element={<ArtistDetail />} />
-          <Route path="/admin/moderation" element={<Moderation />} />
-        </Routes>
+          <Routes>
+            <Route path="/signup" element={<Signup />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/" element={<App />} />
+            <Route path="/artwork/:id" element={<ArtworkDetail />} />
+            <Route path="/art-walk" element={<ArtWalk />} />
+            <Route path="/my-finds" element={<MyFinds />} />
+            <Route path="/add-artwork" element={<AddArtwork />} />
+            <Route path="/contact" element={<Contact />} />
+            <Route path="/faq" element={<Faq />} />
+            <Route path="/privacy" element={<Privacy />} />
+            <Route path="/copyright" element={<Copyright />} />
+            <Route path="/verify-email" element={<VerifyEmail />} />
+            <Route path="/artists" element={<Artists />} />
+            <Route path="/artist/:id" element={<ArtistDetail />} />
+            <Route path="/admin/moderation" element={<Moderation />} />
+          </Routes>
 
-        <ArtWalkTray />
-        <SiteFooter />
-        <MobileNav />
-      </ArtWalkProvider>
+          <ArtWalkTray />
+          <SiteFooter />
+          <MobileNav />
+        </ArtWalkProvider>
+      </LocationProvider>
     </BrowserRouter>
   </StrictMode>,
 );

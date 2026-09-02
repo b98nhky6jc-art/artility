@@ -8,12 +8,12 @@ import { canUserContribute } from "./emailVerification";
 import {
   ARTWORK_PAGE_SIZE,
   formatDistance,
-  requestBrowserLocation,
   sortArtworks,
   type ArtworkSort,
-  type UserLocation,
 } from "./artworkDiscovery";
 import AddToWalkButton from "./AddToWalkButton";
+import { useArtilityLocation } from "./LocationContext";
+import PlaceSearch from "./PlaceSearch";
 
 
 type Artwork = {
@@ -41,14 +41,25 @@ function App() {
   const [artworks, setArtworks] = useState<Artwork[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
   const [artworkSort, setArtworkSort] = useState<ArtworkSort>("newest");
+  const [showPlaceSearch, setShowPlaceSearch] = useState(
+    () => new URLSearchParams(window.location.search).get("placeSearch") === "1",
+  );
   const [visibleArtworkCount, setVisibleArtworkCount] = useState(
     ARTWORK_PAGE_SIZE,
   );
   const sortWasChosen = useRef(false);
   const { data: session } = authClient.useSession();
   const canContribute = canUserContribute(session?.user);
+  const {
+    activeLocation,
+    activeMode,
+    deviceLocation,
+    manualPlace,
+    permissionState,
+    error: locationError,
+    beginLocationFlow,
+  } = useArtilityLocation();
 
   useEffect(() => {
     async function loadArtworks() {
@@ -81,32 +92,22 @@ function App() {
       );
 
       legacyKeys.forEach((key) => window.localStorage.removeItem(key));
+      window.sessionStorage.removeItem("artility:location-requested");
+      window.sessionStorage.removeItem("artility:location-cache");
     } catch {
       // Storage cleanup is optional when a browser blocks local storage access.
     }
   }, []);
 
-  useEffect(() => {
-    let isCurrent = true;
-
-    void requestBrowserLocation().then((location) => {
-      if (isCurrent && location) {
-        setUserLocation(location);
-        if (!sortWasChosen.current) {
-          setArtworkSort("closest");
-          setVisibleArtworkCount(ARTWORK_PAGE_SIZE);
-        }
-      }
-    });
-
-    return () => {
-      isCurrent = false;
-    };
-  }, []);
+  const effectiveArtworkSort =
+    !activeLocation &&
+    (artworkSort === "closest" || artworkSort === "furthest")
+      ? "newest"
+      : artworkSort;
 
   const { sortedArtworks, artworkDistances } = useMemo(
-    () => sortArtworks(artworks, userLocation, artworkSort),
-    [artworks, artworkSort, userLocation],
+    () => sortArtworks(artworks, activeLocation, effectiveArtworkSort),
+    [activeLocation, artworks, effectiveArtworkSort],
   );
 
   const visibleArtworks = sortedArtworks.slice(0, visibleArtworkCount);
@@ -118,6 +119,13 @@ function App() {
     sortWasChosen.current = true;
     setArtworkSort(event.target.value as ArtworkSort);
     setVisibleArtworkCount(ARTWORK_PAGE_SIZE);
+  }
+
+  function preferClosestLocationSort() {
+    if (!sortWasChosen.current) {
+      setArtworkSort("closest");
+      setVisibleArtworkCount(ARTWORK_PAGE_SIZE);
+    }
   }
 
   return (
@@ -132,7 +140,17 @@ function App() {
         <section className="page-panel hero" id="map">
           <div className="hero-copy">
             <span className="location-pill">
-              📍 {userLocation ? "Your location" : "Explore the map"}
+              📍 {activeMode === "device"
+                ? "Using your location"
+                : activeMode === "manual" && manualPlace
+                  ? manualPlace.name
+                  : permissionState === "denied"
+                    ? "Location turned off"
+                    : permissionState === "unavailable"
+                      ? "Location unavailable"
+                      : permissionState === "granted"
+                        ? "Location available"
+                        : "Explore anywhere"}
             </span>
 
             <h2>
@@ -147,18 +165,64 @@ function App() {
             </p>
 
             <div className="hero-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={permissionState === "checking" || permissionState === "requesting"}
+                onClick={() =>
+                  beginLocationFlow({
+                    feature: "explore",
+                    onLocated: preferClosestLocationSort,
+                    onSearchInstead: () => setShowPlaceSearch(true),
+                  })
+                }
+              >
+                {permissionState === "requesting"
+                  ? "Finding you…"
+                  : permissionState === "denied"
+                    ? "How to enable location"
+                    : permissionState === "unavailable"
+                      ? "Location unavailable"
+                      : activeMode === "device"
+                    ? "Refresh my location"
+                    : "Use my location"}
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setShowPlaceSearch((visible) => !visible)}
+              >
+                {showPlaceSearch ? "Close place search" : "Search for a place"}
+              </button>
               <Link to="/add-artwork" className="primary-button">
                 <span aria-hidden="true">+</span>
                 <span>Add artwork</span>
               </Link>
             </div>
+
+            {showPlaceSearch && (
+              <PlaceSearch
+                autoFocus
+                onSelected={() => {
+                  setShowPlaceSearch(true);
+                  preferClosestLocationSort();
+                }}
+              />
+            )}
+
+            {locationError && activeMode !== "manual" && (
+              <p className="location-inline-message" role="status">
+                {locationError.message}
+              </p>
+            )}
           </div>
 
           <div className="map-wrapper" id="home-map">
             <ArtworkMap
               artworks={artworks}
-              userLocation={userLocation}
-              preserveUserLocation={Boolean(userLocation)}
+              userLocation={activeMode === "device" ? deviceLocation : null}
+              focusLocation={activeLocation}
+              preserveUserLocation={Boolean(activeLocation)}
             />
           </div>
         </section>
@@ -167,7 +231,11 @@ function App() {
           <div className="section-heading nearby-heading">
             <div>
               <span className="eyebrow">
-                {userLocation ? "EXPLORE AROUND YOU" : "DISCOVER"}
+                {activeMode === "device"
+                  ? "EXPLORE AROUND YOU"
+                  : activeMode === "manual"
+                    ? `EXPLORE ${manualPlace?.name.toUpperCase() ?? "A PLACE"}`
+                    : "DISCOVER"}
               </span>
               <h3>Nearby artwork</h3>
             </div>
@@ -177,11 +245,11 @@ function App() {
               <select
                 className="artist-sort"
                 aria-label="Sort artwork"
-                value={artworkSort}
+                value={effectiveArtworkSort}
                 onChange={handleArtworkSortChange}
               >
-                {userLocation && <option value="closest">Closest</option>}
-                {userLocation && <option value="furthest">Furthest</option>}
+                {activeLocation && <option value="closest">Closest</option>}
+                {activeLocation && <option value="furthest">Furthest</option>}
                 <option value="newest">Newest</option>
                 <option value="oldest">Oldest</option>
                 <option value="artist-az">Artist A–Z</option>

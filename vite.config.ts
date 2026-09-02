@@ -22,8 +22,10 @@ export default defineConfig({
         background_color: "#f3ead5",
 
         display: "standalone",
+        orientation: "any",
         start_url: "/",
         scope: "/",
+        categories: ["travel", "lifestyle"],
 
         icons: [
           {
@@ -38,7 +40,7 @@ export default defineConfig({
             purpose: "any",
           },
           {
-            src: "/icon-512.png",
+            src: "/maskable-icon-512x512.png",
             sizes: "512x512",
             type: "image/png",
             purpose: "maskable",
