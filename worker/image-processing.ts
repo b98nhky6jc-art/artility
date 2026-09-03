@@ -3,6 +3,11 @@ import {
   SamplingFilter,
   resize,
 } from "@cf-wasm/photon/workerd";
+import {
+  bytesToMegabytes,
+  logUploadPerformance,
+  startUploadMeasurement,
+} from "../shared/upload-performance.js";
 
 export const MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024;
 export const MAX_IMAGE_WIDTH = 6000;
@@ -84,7 +89,18 @@ export async function prepareImageUpload(file: File): Promise<PreparedImage> {
     throw new ImageUploadError("Each photo must be smaller than 8 MB.");
   }
 
+  const totalMeasurement = startUploadMeasurement(
+    `Server image processing: ${file.name}`,
+    {
+      originalFilename: file.name,
+      originalSizeMb: bytesToMegabytes(file.size),
+    },
+  );
+  const fileReadMeasurement = startUploadMeasurement(
+    `Server file read: ${file.name}`,
+  );
   const inputBytes = new Uint8Array(await file.arrayBuffer());
+  fileReadMeasurement.finish({ byteSize: inputBytes.byteLength });
   const detectedMimeType = sniffImageMimeType(inputBytes);
 
   if (!detectedMimeType || detectedMimeType !== file.type) {
@@ -98,9 +114,15 @@ export async function prepareImageUpload(file: File): Promise<PreparedImage> {
   let thumbnail: PhotonImage | null = null;
 
   try {
+    const decodeMeasurement = startUploadMeasurement(
+      `Server image decode: ${file.name}`,
+    );
     source = PhotonImage.new_from_byteslice(inputBytes);
     const sourceWidth = source.get_width();
     const sourceHeight = source.get_height();
+    decodeMeasurement.finish({
+      originalDimensions: `${sourceWidth} × ${sourceHeight}`,
+    });
 
     if (
       sourceWidth <= 0 ||
@@ -118,6 +140,14 @@ export async function prepareImageUpload(file: File): Promise<PreparedImage> {
       sourceWidth,
       sourceHeight,
       PUBLISHED_IMAGE_MAX_DIMENSION,
+    );
+    const resizeMeasurement = startUploadMeasurement(
+      `Server image resize: ${file.name}`,
+      {
+        originalDimensions: `${sourceWidth} × ${sourceHeight}`,
+        resultingDimensions:
+          `${publishedSize.width} × ${publishedSize.height}`,
+      },
     );
     published = resize(
       source,
@@ -137,16 +167,48 @@ export async function prepareImageUpload(file: File): Promise<PreparedImage> {
       thumbnailSize.height,
       SamplingFilter.Lanczos3,
     );
+    resizeMeasurement.finish({
+      thumbnailDimensions:
+        `${thumbnailSize.width} × ${thumbnailSize.height}`,
+    });
+
+    const compressionMeasurement = startUploadMeasurement(
+      `Server JPEG compression: ${file.name}`,
+    );
+    const bytes = published.get_bytes_jpeg(88);
+    const thumbnailBytes = thumbnail.get_bytes_jpeg(78);
+    compressionMeasurement.finish({
+      resultingSizeMb: bytesToMegabytes(bytes.byteLength),
+      thumbnailSizeMb: bytesToMegabytes(thumbnailBytes.byteLength),
+    });
+    const processingDurationMs = totalMeasurement.finish({
+      originalDimensions: `${sourceWidth} × ${sourceHeight}`,
+      resultingDimensions:
+        `${publishedSize.width} × ${publishedSize.height}`,
+      resultingSizeMb: bytesToMegabytes(bytes.byteLength),
+    });
+
+    logUploadPerformance("Server prepared image summary", {
+      originalFilename: file.name,
+      originalDimensions: `${sourceWidth} × ${sourceHeight}`,
+      originalSizeMb: bytesToMegabytes(file.size),
+      resultingDimensions:
+        `${publishedSize.width} × ${publishedSize.height}`,
+      resultingSizeMb: bytesToMegabytes(bytes.byteLength),
+      compressionProcessingDurationMs: processingDurationMs,
+    });
 
     return {
-      bytes: published.get_bytes_jpeg(88),
-      thumbnailBytes: thumbnail.get_bytes_jpeg(78),
+      bytes,
+      thumbnailBytes,
       sourceMimeType: detectedMimeType,
       storedMimeType: "image/jpeg",
       width: publishedSize.width,
       height: publishedSize.height,
     };
   } catch (error) {
+    totalMeasurement.finish({ outcome: "failed" });
+
     if (error instanceof ImageUploadError) {
       throw error;
     }

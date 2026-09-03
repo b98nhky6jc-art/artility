@@ -2460,6 +2460,33 @@ main {
    FORM ACTIONS
    ========================================================= */
 
+.upload-status {
+  width: min(100%, 520px);
+  margin: 4px auto 0;
+  padding: 14px 18px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+
+  border-left: 4px solid var(--teal-strong);
+  border-radius: var(--radius-small);
+  background: var(--soft-green);
+  color: var(--ink);
+
+  text-align: center;
+}
+
+.upload-status-indicator {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+
+  border-radius: 50%;
+  background: var(--teal-strong);
+}
+
 .form-actions {
   margin-top: 18px;
 

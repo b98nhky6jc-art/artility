@@ -39,6 +39,10 @@ import {
 } from "./location-metadata.js";
 import { searchPlaces } from "./place-search.js";
 import { approximateLocationFromRequestMetadata } from "./approximate-location.js";
+import {
+  bytesToMegabytes,
+  startUploadMeasurement,
+} from "../shared/upload-performance.js";
 
 type ArtilityEnv = Env & {
   OPENROUTESERVICE_API_KEY?: string;
@@ -428,12 +432,19 @@ async function publishArtworkPhoto(
   // scheduled retries and administrator approval without affecting photos
   // appended to artwork that was already public.
   if (!photo.already_public && photo.added_by) {
-    await env.DB.prepare(`
+    const checkInMeasurement = startUploadMeasurement(
+      "Automatic check-in creation",
+      { artworkId: photo.artwork_id, photoId: photo.id },
+    );
+    const checkInResult = await env.DB.prepare(`
       INSERT OR IGNORE INTO checkins (artwork_id, user_id)
       VALUES (?, ?)
     `)
       .bind(photo.artwork_id, photo.added_by)
       .run();
+    checkInMeasurement.finish({
+      created: Number(checkInResult.meta.changes ?? 0) === 1,
+    });
   }
 
   return { ...photo, storage_key: publicKey, thumbnail_key: publicThumbnailKey };
@@ -641,12 +652,29 @@ async function quarantineAndModerateArtworkPhoto(
   isPrimary: boolean,
   preparedImage?: PreparedImage,
 ) {
+  const photoMeasurement = startUploadMeasurement(
+    `Server photo pipeline: ${file.name}`,
+    {
+      originalFilename: file.name,
+      receivedSizeMb: bytesToMegabytes(file.size),
+      artworkId,
+    },
+  );
   const image = preparedImage ?? (await prepareImageUpload(file));
   const uploadId = crypto.randomUUID();
   const quarantineKey = `quarantine/artworks/${artworkId}/${uploadId}.jpg`;
   const quarantineThumbnailKey =
     `quarantine/artworks/${artworkId}/${uploadId}-thumb.jpg`;
 
+  const imageUploadMeasurement = startUploadMeasurement(
+    `Individual image R2 upload: ${file.name}`,
+    {
+      originalFilename: file.name,
+      artworkId,
+      resultingDimensions: `${image.width} × ${image.height}`,
+      resultingSizeMb: bytesToMegabytes(image.bytes.byteLength),
+    },
+  );
   await Promise.all([
     env.IMAGES.put(quarantineKey, image.bytes, {
       httpMetadata: { contentType: image.storedMimeType },
@@ -655,10 +683,17 @@ async function quarantineAndModerateArtworkPhoto(
       httpMetadata: { contentType: image.storedMimeType },
     }),
   ]);
+  imageUploadMeasurement.finish({
+    thumbnailSizeMb: bytesToMegabytes(image.thumbnailBytes.byteLength),
+  });
 
   let photoId: number;
 
   try {
+    const photoRecordMeasurement = startUploadMeasurement(
+      "Photo record creation",
+      { originalFilename: file.name, artworkId },
+    );
     const inserted = await env.DB.prepare(`
       INSERT INTO photos (
         artwork_id,
@@ -689,6 +724,7 @@ async function quarantineAndModerateArtworkPhoto(
       )
       .run();
     photoId = Number(inserted.meta.last_row_id);
+    photoRecordMeasurement.finish({ photoId });
   } catch (error) {
     await Promise.all([
       env.IMAGES.delete(quarantineKey),
@@ -697,9 +733,27 @@ async function quarantineAndModerateArtworkPhoto(
     throw error;
   }
 
+  const moderationMeasurement = startUploadMeasurement(
+    `Automatic image moderation: ${file.name}`,
+    { artworkId, photoId },
+  );
   const decision = await moderateImage(env.OPENAI_API_KEY, image);
+  moderationMeasurement.finish({ outcome: decision.outcome });
 
-  return applyImageModerationDecision(env, photoId, decision, 0, image);
+  const decisionMeasurement = startUploadMeasurement(
+    `Public-art validation and publishing: ${file.name}`,
+    { artworkId, photoId },
+  );
+  const result = await applyImageModerationDecision(
+    env,
+    photoId,
+    decision,
+    0,
+    image,
+  );
+  decisionMeasurement.finish({ state: result.state });
+  photoMeasurement.finish({ photoId, state: result.state });
+  return result;
 }
 
 export async function retryPendingImageModeration(env: Env) {
@@ -2344,16 +2398,25 @@ export default {
     }
 
     if (url.pathname === "/api/artworks" && request.method === "POST") {
+      const artworkUploadMeasurement = startUploadMeasurement(
+        "Artwork API request total",
+      );
+
       try {
 
         const access = await requireVerifiedUser();
 
         if (!access.ok) {
+          artworkUploadMeasurement.finish({ outcome: "access denied" });
           return access.response;
         }
 
         const userId = access.userId;
+        const formDataMeasurement = startUploadMeasurement(
+          "Artwork multipart form parsing",
+        );
         const formData = await request.formData();
+        formDataMeasurement.finish();
 
         const title =
           String(formData.get("title") ?? "").trim() || null;
@@ -2384,6 +2447,7 @@ export default {
         if (
           !isValidArtworkCoordinates(latitude, longitude)
         ) {
+          artworkUploadMeasurement.finish({ outcome: "invalid location" });
           return Response.json(
             { error: "Valid location is required" },
             { status: 400 },
@@ -2391,6 +2455,7 @@ export default {
         }
 
         if (!infrastructureType) {
+          artworkUploadMeasurement.finish({ outcome: "invalid artwork setting" });
           return Response.json(
             { error: "Choose a valid artwork setting" },
             { status: 400 },
@@ -2398,6 +2463,7 @@ export default {
         }
 
         if (photos.length === 0) {
+          artworkUploadMeasurement.finish({ outcome: "no photos" });
           return Response.json(
             { error: "At least one photo is required" },
             { status: 400 },
@@ -2405,6 +2471,7 @@ export default {
         }
 
         if (photos.length > MAX_PHOTOS_PER_ARTWORK) {
+          artworkUploadMeasurement.finish({ outcome: "too many photos" });
           return Response.json(
             {
               error: `You can upload a maximum of ${MAX_PHOTOS_PER_ARTWORK} photos per artwork.`,
@@ -2413,22 +2480,39 @@ export default {
           );
         }
         await enforceImageUploadRateLimit(env, userId, photos.length);
+        const serverProcessingMeasurement = startUploadMeasurement(
+          "Server image processing batch",
+          { imageCount: photos.length },
+        );
         const preparedPhotos = await Promise.all(
           photos.map((photo) => prepareImageUpload(photo)),
         );
+        serverProcessingMeasurement.finish({ imageCount: preparedPhotos.length });
 
+        const artistMeasurement = startUploadMeasurement(
+          "Artist lookup or creation",
+        );
         const resolvedArtist = await resolveArtworkArtist(
           env,
           artistName,
           instagramHandle,
         );
+        artistMeasurement.finish({ artistId: resolvedArtist?.id ?? null });
         const artistId = resolvedArtist?.id ?? null;
+        const locationMeasurement = startUploadMeasurement(
+          "Artwork reverse geocoding",
+        );
         const locationMetadata = await reverseGeocodeArtworkLocation(
           latitude,
           longitude,
           { endpoint: env.LOCATION_GEOCODER_URL },
         );
+        locationMeasurement.finish(locationMetadata);
 
+        const artworkRecordMeasurement = startUploadMeasurement(
+          "Artwork API/database creation",
+          { imageCount: photos.length },
+        );
         const artworkInsert = await env.DB.prepare(`
       INSERT INTO artworks (
         title,
@@ -2460,6 +2544,7 @@ export default {
         const artworkId = Number(
           artworkInsert.meta.last_row_id
         );
+        artworkRecordMeasurement.finish({ artworkId });
 
         const moderation = [];
 
@@ -2479,6 +2564,12 @@ export default {
           }
         }
 
+        artworkUploadMeasurement.finish({
+          outcome: "created",
+          artworkId,
+          imageCount: photos.length,
+        });
+
         return Response.json(
           {
             id: artworkId,
@@ -2489,6 +2580,7 @@ export default {
           }
         );
       } catch (error) {
+        artworkUploadMeasurement.finish({ outcome: "failed" });
         console.error("Artwork upload failed:", error);
 
         if (error instanceof ImageUploadError) {
@@ -3783,10 +3875,15 @@ artists.name AS artist_name,
     );
 
     if (artworkPhotosMatch && request.method === "POST") {
+      const photoAppendMeasurement = startUploadMeasurement(
+        "Existing artwork photo API request total",
+      );
+
       try {
         const access = await requireVerifiedUser();
 
         if (!access.ok) {
+          photoAppendMeasurement.finish({ outcome: "access denied" });
           return access.response;
         }
 
@@ -3804,19 +3901,26 @@ artists.name AS artist_name,
           .first();
 
         if (!artwork) {
+          photoAppendMeasurement.finish({ outcome: "artwork not found" });
           return Response.json(
             { error: "Artwork not found" },
             { status: 404 }
           );
         }
 
+        const formDataMeasurement = startUploadMeasurement(
+          "Existing artwork multipart form parsing",
+          { artworkId },
+        );
         const formData = await request.formData();
+        formDataMeasurement.finish();
 
         const photos = formData
           .getAll("photos")
           .filter((value): value is File => value instanceof File);
 
         if (photos.length === 0) {
+          photoAppendMeasurement.finish({ outcome: "no photos", artworkId });
           return Response.json(
             { error: "At least one photo is required" },
             { status: 400 }
@@ -3839,6 +3943,10 @@ artists.name AS artist_name,
             MAX_PHOTOS_PER_ARTWORK - existingCount,
           );
 
+          photoAppendMeasurement.finish({
+            outcome: "photo limit exceeded",
+            artworkId,
+          });
           return Response.json(
             {
               error:
@@ -3852,9 +3960,14 @@ artists.name AS artist_name,
         }
 
         await enforceImageUploadRateLimit(env, userId, photos.length);
+        const serverProcessingMeasurement = startUploadMeasurement(
+          "Existing artwork server image processing batch",
+          { artworkId, imageCount: photos.length },
+        );
         const preparedPhotos = await Promise.all(
           photos.map((photo) => prepareImageUpload(photo)),
         );
+        serverProcessingMeasurement.finish({ imageCount: preparedPhotos.length });
         const moderation = [];
 
         for (let index = 0; index < photos.length; index++) {
@@ -3873,6 +3986,12 @@ artists.name AS artist_name,
           }
         }
 
+        photoAppendMeasurement.finish({
+          outcome: "photos added",
+          artworkId,
+          imageCount: photos.length,
+        });
+
         return Response.json({
           success: true,
           artwork_id: artworkId,
@@ -3880,6 +3999,7 @@ artists.name AS artist_name,
           image_moderation: moderation,
         });
       } catch (error) {
+        photoAppendMeasurement.finish({ outcome: "failed" });
         console.error("Photo append failed:", error);
 
         if (error instanceof ImageUploadError) {

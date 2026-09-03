@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import * as exifr from "exifr";
 import "./App.css";
@@ -13,6 +13,11 @@ import {
   INFRASTRUCTURE_TYPES,
   type InfrastructureType,
 } from "../shared/infrastructure-types";
+import {
+  bytesToMegabytes,
+  logUploadPerformance,
+  startUploadMeasurement,
+} from "../shared/upload-performance";
 
 type Stage = "upload" | "review" | "submitted";
 type UploadModerationNotice = "processing" | "review" | "rejected";
@@ -42,6 +47,20 @@ type UploadResponse = {
   }>;
 };
 
+type NormalisedImage = {
+  file: File;
+  sourceDimensionsLabel: string;
+  width: number;
+  height: number;
+  processingDurationMs: number;
+};
+
+type PreparedClientPhoto = {
+  original: File;
+  normalised: NormalisedImage;
+  thumbnail: File;
+};
+
 function getUploadModerationNotice(data: UploadResponse) {
   const states = data.image_moderation?.map((item) => item.state) ?? [];
 
@@ -63,9 +82,19 @@ function getUploadModerationNotice(data: UploadResponse) {
 function hasApprovedUpload(data: UploadResponse) {
   return data.image_moderation?.some((item) => item.state === "approved") ?? false;
 }
-async function normaliseImage(file: File): Promise<File> {
+async function normaliseImage(
+  file: File,
+  measurementLabel: string,
+): Promise<NormalisedImage> {
   const MAX_DIMENSION = 2200;
   const JPEG_QUALITY = 0.88;
+  const totalMeasurement = startUploadMeasurement(
+    `${measurementLabel}: image processing`,
+    {
+      originalFilename: file.name,
+      originalSizeMb: bytesToMegabytes(file.size),
+    },
+  );
 
   function createJpegBlob(canvas: HTMLCanvasElement) {
     return new Promise<Blob>((resolve, reject) => {
@@ -106,6 +135,10 @@ async function normaliseImage(file: File): Promise<File> {
     const raw = new LibRaw();
 
     try {
+      const decodeMeasurement = startUploadMeasurement(
+        `${measurementLabel}: DNG decoding`,
+        { originalFilename: file.name },
+      );
       const buffer = await file.arrayBuffer();
 
       await raw.open(new Uint8Array(buffer), {
@@ -122,6 +155,10 @@ async function normaliseImage(file: File): Promise<File> {
       }
 
       const { width, height, colors, data } = decoded;
+      decodeMeasurement.finish({
+        originalDimensions: "Unavailable for half-size DNG decoding",
+        decodedSourceDimensions: `${width} × ${height}`,
+      });
 
       if (colors < 3) {
         throw new Error("Decoded DNG did not contain RGB data.");
@@ -163,6 +200,14 @@ async function normaliseImage(file: File): Promise<File> {
       );
 
       const targetSize = calculateSize(width, height);
+      const resizeMeasurement = startUploadMeasurement(
+        `${measurementLabel}: image resizing`,
+        {
+          originalFilename: file.name,
+          sourceDimensions: `${width} × ${height}`,
+          resultingDimensions: `${targetSize.width} × ${targetSize.height}`,
+        },
+      );
 
       const canvas = document.createElement("canvas");
       canvas.width = targetSize.width;
@@ -181,24 +226,61 @@ async function normaliseImage(file: File): Promise<File> {
         targetSize.width,
         targetSize.height,
       );
+      resizeMeasurement.finish();
 
+      const compressionMeasurement = startUploadMeasurement(
+        `${measurementLabel}: JPEG compression`,
+        { originalFilename: file.name },
+      );
       const blob = await createJpegBlob(canvas);
+      compressionMeasurement.finish({
+        resultingSizeMb: bytesToMegabytes(blob.size),
+      });
       const cleanName = file.name.replace(/\.dng$/i, ".jpg");
-
-      return new File([blob], cleanName, {
+      const normalisedFile = new File([blob], cleanName, {
         type: "image/jpeg",
       });
+      const processingDurationMs = totalMeasurement.finish({
+        originalDimensions: "Unavailable for half-size DNG decoding",
+        decodedSourceDimensions: `${width} × ${height}`,
+        resultingDimensions: `${targetSize.width} × ${targetSize.height}`,
+        resultingSizeMb: bytesToMegabytes(normalisedFile.size),
+      });
+
+      return {
+        file: normalisedFile,
+        sourceDimensionsLabel:
+          `Unavailable (decoded DNG source: ${width} × ${height})`,
+        width: targetSize.width,
+        height: targetSize.height,
+        processingDurationMs,
+      };
     } finally {
       raw.dispose();
     }
   }
 
+  const decodeMeasurement = startUploadMeasurement(
+    `${measurementLabel}: image decoding`,
+    { originalFilename: file.name },
+  );
   const bitmap = await createImageBitmap(file);
+  decodeMeasurement.finish({
+    originalDimensions: `${bitmap.width} × ${bitmap.height}`,
+  });
 
   try {
     const targetSize = calculateSize(
       bitmap.width,
       bitmap.height,
+    );
+    const resizeMeasurement = startUploadMeasurement(
+      `${measurementLabel}: image resizing`,
+      {
+        originalFilename: file.name,
+        originalDimensions: `${bitmap.width} × ${bitmap.height}`,
+        resultingDimensions: `${targetSize.width} × ${targetSize.height}`,
+      },
     );
 
     const canvas = document.createElement("canvas");
@@ -218,25 +300,54 @@ async function normaliseImage(file: File): Promise<File> {
       targetSize.width,
       targetSize.height,
     );
+    resizeMeasurement.finish();
 
+    const compressionMeasurement = startUploadMeasurement(
+      `${measurementLabel}: JPEG compression`,
+      { originalFilename: file.name },
+    );
     const blob = await createJpegBlob(canvas);
+    compressionMeasurement.finish({
+      resultingSizeMb: bytesToMegabytes(blob.size),
+    });
 
     const cleanName = file.name.replace(/\.[^.]+$/, ".jpg");
-
-    return new File([blob], cleanName, {
+    const normalisedFile = new File([blob], cleanName, {
       type: "image/jpeg",
     });
+    const processingDurationMs = totalMeasurement.finish({
+      originalDimensions: `${bitmap.width} × ${bitmap.height}`,
+      resultingDimensions: `${targetSize.width} × ${targetSize.height}`,
+      resultingSizeMb: bytesToMegabytes(normalisedFile.size),
+    });
+
+    return {
+      file: normalisedFile,
+      sourceDimensionsLabel: `${bitmap.width} × ${bitmap.height}`,
+      width: targetSize.width,
+      height: targetSize.height,
+      processingDurationMs,
+    };
   } finally {
     bitmap.close();
   }
 }
 
 
-async function createThumbnail(file: File): Promise<File> {
+async function createThumbnail(file: File, measurementLabel: string) {
   const MAX_DIMENSION = 800;
   const JPEG_QUALITY = 0.78;
+  const totalMeasurement = startUploadMeasurement(
+    `${measurementLabel}: thumbnail processing`,
+    { filename: file.name, sourceSizeMb: bytesToMegabytes(file.size) },
+  );
 
+  const decodeMeasurement = startUploadMeasurement(
+    `${measurementLabel}: thumbnail decoding`,
+    { filename: file.name },
+  );
   const bitmap = await createImageBitmap(file);
+  decodeMeasurement.finish({ sourceDimensions: `${bitmap.width} × ${bitmap.height}` });
 
   try {
     const scale = Math.min(
@@ -247,6 +358,13 @@ async function createThumbnail(file: File): Promise<File> {
 
     const width = Math.round(bitmap.width * scale);
     const height = Math.round(bitmap.height * scale);
+    const resizeMeasurement = startUploadMeasurement(
+      `${measurementLabel}: thumbnail resizing`,
+      {
+        sourceDimensions: `${bitmap.width} × ${bitmap.height}`,
+        resultingDimensions: `${width} × ${height}`,
+      },
+    );
 
     const canvas = document.createElement("canvas");
     canvas.width = width;
@@ -259,7 +377,12 @@ async function createThumbnail(file: File): Promise<File> {
     }
 
     context.drawImage(bitmap, 0, 0, width, height);
+    resizeMeasurement.finish();
 
+    const compressionMeasurement = startUploadMeasurement(
+      `${measurementLabel}: thumbnail JPEG compression`,
+      { filename: file.name },
+    );
     const blob = await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob(
         (result) => {
@@ -273,13 +396,22 @@ async function createThumbnail(file: File): Promise<File> {
         JPEG_QUALITY,
       );
     });
+    compressionMeasurement.finish({
+      resultingSizeMb: bytesToMegabytes(blob.size),
+    });
 
     const cleanName =
       file.name.replace(/\.[^.]+$/, "") + "-thumb.jpg";
 
-    return new File([blob], cleanName, {
+    const thumbnail = new File([blob], cleanName, {
       type: "image/jpeg",
     });
+    totalMeasurement.finish({
+      resultingDimensions: `${width} × ${height}`,
+      resultingSizeMb: bytesToMegabytes(thumbnail.size),
+    });
+
+    return thumbnail;
   } finally {
     bitmap.close();
   }
@@ -288,6 +420,7 @@ async function createThumbnail(file: File): Promise<File> {
 const MAX_PHOTOS_PER_ARTWORK = 5;
 export default function AddArtwork() {
   const navigate = useNavigate();
+  const submissionInFlightRef = useRef(false);
   const { data: session, isPending } = authClient.useSession();
   const canContribute = canUserContribute(session?.user);
   const {
@@ -325,6 +458,7 @@ export default function AddArtwork() {
 
   const [readingPhoto, setReadingPhoto] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState("");
   const [error, setError] = useState("");
   const [submissionResult, setSubmissionResult] =
     useState<SubmissionResult | null>(null);
@@ -363,6 +497,18 @@ export default function AddArtwork() {
       return;
     }
 
+    const selectionMeasurement = startUploadMeasurement(
+      "File selection and initial processing",
+      {
+        fileCount: selectedFiles.length,
+        files: selectedFiles.map((file) => ({
+          originalFilename: file.name,
+          originalSizeMb: bytesToMegabytes(file.size),
+          mimeType: file.type || "unknown",
+        })),
+      },
+    );
+
     setReadingPhoto(true);
     setError("");
     setNearbyArtworks([]);
@@ -380,9 +526,12 @@ export default function AddArtwork() {
 
         if (isDng) {
           try {
-            const converted = await normaliseImage(selectedFile);
+            const converted = await normaliseImage(
+              selectedFile,
+              `Selection preview: ${selectedFile.name}`,
+            );
 
-            return URL.createObjectURL(converted);
+            return URL.createObjectURL(converted.file);
           } catch (error) {
             console.warn("Could not create DNG preview:", error);
 
@@ -402,9 +551,18 @@ export default function AddArtwork() {
 
 
     const primaryFile = selectedFiles[0];
+    const metadataMeasurement = startUploadMeasurement(
+      "EXIF and metadata extraction",
+      { originalFilename: primaryFile.name },
+    );
 
     try {
       const gps = await exifr.gps(primaryFile);
+      metadataMeasurement.finish({
+        gpsCoordinatesFound:
+          typeof gps?.latitude === "number" &&
+          typeof gps?.longitude === "number",
+      });
 
       if (
         gps &&
@@ -423,9 +581,11 @@ export default function AddArtwork() {
 
       setStage("review");
     } catch {
+      metadataMeasurement.finish({ outcome: "failed" });
       setError("Could not read metadata from this photo.");
       setStage("review");
     } finally {
+      selectionMeasurement.finish();
       setReadingPhoto(false);
     }
   }
@@ -475,8 +635,78 @@ export default function AddArtwork() {
     });
   }
 
+  async function preparePhotosForUpload(orderedFiles: File[]) {
+    const batchMeasurement = startUploadMeasurement(
+      "Photo processing batch",
+      { imageCount: orderedFiles.length },
+    );
+    const preparedPhotos: PreparedClientPhoto[] = [];
+
+    for (let index = 0; index < orderedFiles.length; index++) {
+      const file = orderedFiles[index];
+      const label = `Photo ${index + 1} of ${orderedFiles.length}`;
+      setUploadStatus(`Preparing photo ${index + 1} of ${orderedFiles.length}…`);
+
+      const photoMeasurement = startUploadMeasurement(
+        `${label}: compression and processing total`,
+        {
+          originalFilename: file.name,
+          originalSizeMb: bytesToMegabytes(file.size),
+        },
+      );
+      const normalised = await normaliseImage(file, label);
+      const thumbnail = await createThumbnail(normalised.file, label);
+      const processingDurationMs = photoMeasurement.finish({
+        originalDimensions: normalised.sourceDimensionsLabel,
+        resultingDimensions: `${normalised.width} × ${normalised.height}`,
+        resultingSizeMb: bytesToMegabytes(normalised.file.size),
+        thumbnailSizeMb: bytesToMegabytes(thumbnail.size),
+      });
+
+      logUploadPerformance(`${label}: prepared image summary`, {
+        originalFilename: file.name,
+        originalDimensions: normalised.sourceDimensionsLabel,
+        originalSizeMb: bytesToMegabytes(file.size),
+        resultingDimensions: `${normalised.width} × ${normalised.height}`,
+        resultingSizeMb: bytesToMegabytes(normalised.file.size),
+        compressionProcessingDurationMs: processingDurationMs,
+        uploadDurationMs:
+          "Measured for the shared multipart request and individual server-side R2 write",
+      });
+
+      preparedPhotos.push({ original: file, normalised, thumbnail });
+    }
+
+    batchMeasurement.finish({ imageCount: preparedPhotos.length });
+    return preparedPhotos;
+  }
+
+  function logMultipartUploadDuration(
+    preparedPhotos: PreparedClientPhoto[],
+    durationMs: number,
+  ) {
+    preparedPhotos.forEach(({ original }, index) => {
+      logUploadPerformance(
+        `Photo ${index + 1} of ${preparedPhotos.length}: browser upload`,
+        {
+          originalFilename: original.name,
+          uploadDurationMs:
+            "Not individually available because all photos share one multipart request",
+          batchUploadAndApiDurationMs: durationMs,
+        },
+      );
+    });
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (submissionInFlightRef.current) {
+      logUploadPerformance("Duplicate submission prevented", {
+        action: "create artwork",
+      });
+      return;
+    }
 
     if (files.length === 0) {
       setError("Choose at least one photo first.");
@@ -488,8 +718,15 @@ export default function AddArtwork() {
       return;
     }
 
+    submissionInFlightRef.current = true;
     setSaving(true);
+    setUploadStatus("Preparing photos…");
     setError("");
+    const submissionMeasurement = startUploadMeasurement(
+      "Total artwork submission",
+      { imageCount: files.length },
+    );
+    let submissionOutcome = "failed";
 
     try {
       const formData = new FormData();
@@ -506,19 +743,28 @@ export default function AddArtwork() {
         files[primaryPhotoIndex],
         ...files.filter((_, index) => index !== primaryPhotoIndex),
       ];
+      const preparedPhotos = await preparePhotosForUpload(orderedFiles);
 
-      for (const file of orderedFiles) {
-        const normalised = await normaliseImage(file);
-        const thumbnail = await createThumbnail(normalised);
-
-        formData.append("photos", normalised);
-        formData.append("thumbnails", thumbnail);
+      for (const prepared of preparedPhotos) {
+        formData.append("photos", prepared.normalised.file);
+        formData.append("thumbnails", prepared.thumbnail);
       }
 
+      setUploadStatus(
+        `Uploading ${preparedPhotos.length} ${preparedPhotos.length === 1 ? "photo" : "photos"} and saving artwork…`,
+      );
+      const apiMeasurement = startUploadMeasurement(
+        "Artwork API and multipart upload",
+        { imageCount: preparedPhotos.length },
+      );
       const response = await fetch("/api/artworks", {
         method: "POST",
         body: formData,
       });
+      const apiDurationMs = apiMeasurement.finish({
+        responseStatus: response.status,
+      });
+      logMultipartUploadDuration(preparedPhotos, apiDurationMs);
 
       if (!response.ok) {
         const data = await response.json().catch(() => null);
@@ -527,6 +773,10 @@ export default function AddArtwork() {
         );
       }
 
+      setUploadStatus("Finalising submission…");
+      const finalMeasurement = startUploadMeasurement(
+        "Final refresh/navigation",
+      );
       const artwork = (await response.json()) as UploadResponse;
 
       if (!artwork.id) {
@@ -536,22 +786,31 @@ export default function AddArtwork() {
       const moderationNotice = getUploadModerationNotice(artwork);
 
       if (moderationNotice && !hasApprovedUpload(artwork)) {
+        setUploadStatus("Done");
         setSubmissionResult({
           artworkId: artwork.id,
           moderation: moderationNotice,
         });
         setStage("submitted");
         window.scrollTo({ top: 0, behavior: "smooth" });
+        finalMeasurement.finish({ destination: "submission result" });
+        submissionOutcome = "submitted for moderation";
         return;
       }
 
+      setUploadStatus("Done");
       navigate(`/artwork/${artwork.id}`, {
         state: { uploadModeration: moderationNotice },
       });
+      finalMeasurement.finish({ destination: `/artwork/${artwork.id}` });
+      submissionOutcome = "navigated to artwork";
     } catch (error) {
       console.error(error);
       setError("Could not add artwork.");
+      setUploadStatus("");
     } finally {
+      submissionMeasurement.finish({ outcome: submissionOutcome });
+      submissionInFlightRef.current = false;
       setSaving(false);
     }
   }
@@ -685,7 +944,11 @@ export default function AddArtwork() {
                 </div>
               )}
 
-              <form className="add-artwork-form" onSubmit={handleSubmit}>
+              <form
+                className="add-artwork-form"
+                onSubmit={handleSubmit}
+                aria-busy={saving}
+              >
                 <label>
                   Title
                   <input
@@ -841,10 +1104,32 @@ export default function AddArtwork() {
                                     MAX_PHOTOS_PER_ARTWORK - artwork.photo_count
                                   }
                                   onClick={async () => {
-                                    try {
-                                      setSaving(true);
-                                      setError("");
+                                    if (submissionInFlightRef.current) {
+                                      logUploadPerformance(
+                                        "Duplicate submission prevented",
+                                        {
+                                          action: "add photos to existing artwork",
+                                          artworkId: artwork.id,
+                                        },
+                                      );
+                                      return;
+                                    }
 
+                                    submissionInFlightRef.current = true;
+                                    setSaving(true);
+                                    setUploadStatus("Preparing photos…");
+                                    setError("");
+                                    const submissionMeasurement =
+                                      startUploadMeasurement(
+                                        "Total existing-artwork photo submission",
+                                        {
+                                          artworkId: artwork.id,
+                                          imageCount: files.length,
+                                        },
+                                      );
+                                    let submissionOutcome = "failed";
+
+                                    try {
                                       const formData = new FormData();
 
                                       const orderedFiles = [
@@ -853,21 +1138,45 @@ export default function AddArtwork() {
                                           (_, index) => index !== primaryPhotoIndex,
                                         ),
                                       ];
+                                      const preparedPhotos =
+                                        await preparePhotosForUpload(orderedFiles);
 
-                                      for (const file of orderedFiles) {
-                                        const normalised = await normaliseImage(file);
-                                        const thumbnail = await createThumbnail(normalised);
-
-                                        formData.append("photos", normalised);
-                                        formData.append("thumbnails", thumbnail);
+                                      for (const prepared of preparedPhotos) {
+                                        formData.append(
+                                          "photos",
+                                          prepared.normalised.file,
+                                        );
+                                        formData.append(
+                                          "thumbnails",
+                                          prepared.thumbnail,
+                                        );
                                       }
 
+                                      setUploadStatus(
+                                        `Uploading ${preparedPhotos.length} ${preparedPhotos.length === 1 ? "photo" : "photos"} and saving…`,
+                                      );
+                                      const apiMeasurement =
+                                        startUploadMeasurement(
+                                          "Existing artwork photo API and multipart upload",
+                                          {
+                                            artworkId: artwork.id,
+                                            imageCount: preparedPhotos.length,
+                                          },
+                                        );
                                       const response = await fetch(
                                         `/api/artworks/${artwork.id}/photos`,
                                         {
                                           method: "POST",
                                           body: formData,
                                         },
+                                      );
+                                      const apiDurationMs =
+                                        apiMeasurement.finish({
+                                          responseStatus: response.status,
+                                        });
+                                      logMultipartUploadDuration(
+                                        preparedPhotos,
+                                        apiDurationMs,
                                       );
 
                                       if (!response.ok) {
@@ -881,17 +1190,29 @@ export default function AddArtwork() {
                                         );
                                       }
 
+                                      setUploadStatus("Finalising submission…");
+                                      const finalMeasurement =
+                                        startUploadMeasurement(
+                                          "Final refresh/navigation",
+                                        );
                                       const result =
                                         (await response.json()) as UploadResponse;
 
+                                      setUploadStatus("Done");
                                       navigate(`/artwork/${artwork.id}`, {
                                         state: {
                                           uploadModeration:
                                             getUploadModerationNotice(result),
                                         },
                                       });
+                                      finalMeasurement.finish({
+                                        destination: `/artwork/${artwork.id}`,
+                                      });
+                                      submissionOutcome =
+                                        "navigated to artwork";
                                     } catch (error) {
                                       console.error(error);
+                                      setUploadStatus("");
 
                                       setError(
                                         error instanceof Error
@@ -899,6 +1220,10 @@ export default function AddArtwork() {
                                           : "Could not add photos.",
                                       );
                                     } finally {
+                                      submissionMeasurement.finish({
+                                        outcome: submissionOutcome,
+                                      });
+                                      submissionInFlightRef.current = false;
                                       setSaving(false);
                                     }
                                   }}
@@ -955,23 +1280,40 @@ export default function AddArtwork() {
                   </p>
                 )}
 
+                {saving && uploadStatus && (
+                  <div
+                    className="upload-status"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <span className="upload-status-indicator" aria-hidden="true" />
+                    <strong>{uploadStatus}</strong>
+                  </div>
+                )}
+
                 <div className="form-actions">
                   <button
                     type="button"
                     className="secondary-button"
                     onClick={() => navigate("/")}
+                    disabled={saving}
                   >
                     Cancel upload
                   </button>
 
                   {nearbyArtworks.length === 0 ? (
-                    <button className="checkin-button" disabled={saving}>
-                      {saving ? "Adding artwork…" : "Confirm & add artwork"}
+                    <button
+                      className="checkin-button"
+                      disabled={saving}
+                      aria-disabled={saving}
+                    >
+                      {saving ? "Working…" : "Confirm & add artwork"}
                     </button>
                   ) : (
                     <button
                       type="button"
                       className="checkin-button"
+                      disabled={saving}
                       onClick={() => {
                         setNearbyArtworks([]);
                       }}
