@@ -807,8 +807,12 @@ main {
 }
 
 .distance {
+  max-width: 62%;
   color: var(--teal-strong);
   font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-align: right;
 }
 
 .artwork-card h4 {

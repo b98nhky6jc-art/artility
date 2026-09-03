@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { getDistanceInMetres } from "../src/artworkDiscovery.ts";
 import { getArtworkDisplayTitle } from "../src/artworkDisplay.ts";
-import { getArtworkLocality } from "../shared/artwork-location.ts";
+import {
+  getArtworkLocality,
+  getArtworkLocationLabel,
+} from "../shared/artwork-location.ts";
 import {
   needsLocationMetadataRefresh,
   refreshArtworkLocationMetadata,
@@ -25,6 +28,21 @@ test("an artwork in Leeds displays Leeds", () => {
   });
 
   assert.equal(label, "Utility box / cabinet in Leeds");
+});
+
+test("compact location labels include neighbourhood and city without duplicates", () => {
+  assert.equal(
+    getArtworkLocationLabel({ town: "Kirkstall", city: "Leeds" }),
+    "Kirkstall, Leeds",
+  );
+  assert.equal(
+    getArtworkLocationLabel({ town: "Leeds", city: "Leeds" }),
+    "Leeds",
+  );
+  assert.equal(
+    getArtworkLocationLabel({ town: "Frog Island", city: "Leicester" }),
+    "Frog Island, Leicester",
+  );
 });
 
 test("an artwork outside Leeds does not inherit Leeds", async () => {

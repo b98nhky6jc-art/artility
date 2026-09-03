@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   ARTWORK_PAGE_SIZE,
+  formatArtworkProximity,
   sortArtworks,
   type SortableArtwork,
 } from "../src/artworkDiscovery.ts";
@@ -32,6 +33,17 @@ const artworks: SortableArtwork[] = [
 
 test("artwork discovery page size remains nine", () => {
   assert.equal(ARTWORK_PAGE_SIZE, 9);
+});
+
+test("artwork cards always show their place and add distance when available", () => {
+  const artwork = { town: "Kirkstall", city: "Leeds" };
+
+  assert.equal(formatArtworkProximity(artwork), "Kirkstall, Leeds");
+  assert.equal(
+    formatArtworkProximity(artwork, 56.2),
+    "56 m away, Kirkstall, Leeds",
+  );
+  assert.equal(formatArtworkProximity({ town: null, city: null }, 424), "424 m away");
 });
 
 test("distance sorting supports closest and furthest", () => {

@@ -1,4 +1,8 @@
 import type { UserLocation } from "./location";
+import {
+  getArtworkLocationLabel,
+  type ArtworkLocation,
+} from "../shared/artwork-location.ts";
 
 export type { UserLocation } from "./location";
 
@@ -66,6 +70,19 @@ export function formatDistance(distanceInMetres: number) {
   const distanceInKilometres = distanceInMetres / 1000;
 
   return `${distanceInKilometres < 10 ? distanceInKilometres.toFixed(1) : Math.round(distanceInKilometres)} km away`;
+}
+
+export function formatArtworkProximity(
+  artwork: ArtworkLocation,
+  distanceInMetres?: number,
+) {
+  const distance =
+    typeof distanceInMetres === "number" && Number.isFinite(distanceInMetres)
+    ? formatDistance(distanceInMetres)
+    : null;
+  const location = getArtworkLocationLabel(artwork);
+
+  return [distance, location].filter(Boolean).join(", ") || null;
 }
 
 export function rankArtworksByDistance<T extends ArtworkCoordinates>(

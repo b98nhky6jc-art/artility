@@ -7,7 +7,7 @@ import EmailVerificationNotice from "./EmailVerificationNotice";
 import { canUserContribute } from "./emailVerification";
 import {
   ARTWORK_PAGE_SIZE,
-  formatDistance,
+  formatArtworkProximity,
   sortArtworks,
   type ArtworkSort,
 } from "./artworkDiscovery";
@@ -281,8 +281,14 @@ function App() {
           )}
 
           <div className="artwork-grid">
-            {visibleArtworks.map((artwork) => (
-              <article className="artwork-card" key={artwork.id}>
+            {visibleArtworks.map((artwork) => {
+              const proximity = formatArtworkProximity(
+                artwork,
+                artworkDistances.get(artwork.id),
+              );
+
+              return (
+                <article className="artwork-card" key={artwork.id}>
                 <Link
                   to={`/artwork/${artwork.id}`}
                   className="artwork-card-link"
@@ -310,11 +316,7 @@ function App() {
                         ● {artwork.status}
                       </span>
 
-                      {artworkDistances.has(artwork.id) && (
-                        <span className="distance">
-                          {formatDistance(artworkDistances.get(artwork.id)!)}
-                        </span>
-                      )}
+                      {proximity && <span className="distance">{proximity}</span>}
                     </div>
 
                     <h4>{getDiscoveryArtworkTitle(artwork)}</h4>
@@ -328,7 +330,8 @@ function App() {
                 </Link>
                 <AddToWalkButton artworkId={artwork.id} />
               </article>
-            ))}
+              );
+            })}
           </div>
 
           {sortedArtworks.length > 0 && (

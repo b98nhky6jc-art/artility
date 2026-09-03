@@ -23,3 +23,19 @@ export function getArtworkLocality(location: ArtworkLocation) {
 
   return town || city;
 }
+
+/** Returns a compact town-and-city label without repeating identical values. */
+export function getArtworkLocationLabel(location: ArtworkLocation) {
+  const town = normaliseLocationPart(location.town);
+  const city = normaliseLocationPart(location.city);
+
+  if (
+    town &&
+    city &&
+    town.localeCompare(city, undefined, { sensitivity: "accent" }) !== 0
+  ) {
+    return `${town}, ${city}`;
+  }
+
+  return town || city;
+}
