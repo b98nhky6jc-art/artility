@@ -11,13 +11,17 @@ export type ArtworkWithLocationMetadata = ArtworkLocationMetadata & {
 };
 
 type NominatimAddress = {
+  neighbourhood?: unknown;
+  suburb?: unknown;
+  quarter?: unknown;
+  city_district?: unknown;
+  borough?: unknown;
   town?: unknown;
   city?: unknown;
   village?: unknown;
   hamlet?: unknown;
-  suburb?: unknown;
-  city_district?: unknown;
   municipality?: unknown;
+  islet?: unknown;
 };
 
 type ReverseGeocodeResponse = { address?: NominatimAddress };
@@ -52,13 +56,22 @@ export function locationMetadataFromAddress(
     return { town: null, city: null };
   }
 
-  const city = readPlaceName(address.city) || readPlaceName(address.town);
-  const town =
+  const city =
+    readPlaceName(address.city) ||
     readPlaceName(address.town) ||
     readPlaceName(address.village) ||
     readPlaceName(address.hamlet) ||
+    readPlaceName(address.municipality);
+  const town =
+    readPlaceName(address.islet) ||
     readPlaceName(address.suburb) ||
+    readPlaceName(address.neighbourhood) ||
+    readPlaceName(address.quarter) ||
     readPlaceName(address.city_district) ||
+    readPlaceName(address.borough) ||
+    readPlaceName(address.town) ||
+    readPlaceName(address.village) ||
+    readPlaceName(address.hamlet) ||
     readPlaceName(address.municipality);
   const locality = getArtworkLocality({ town, city });
 
@@ -115,7 +128,10 @@ export async function reverseGeocodeArtworkLocation(
   );
   requestUrl.searchParams.set("format", "jsonv2");
   requestUrl.searchParams.set("addressdetails", "1");
-  requestUrl.searchParams.set("zoom", "12");
+  // Building-level results retain the surrounding neighbourhood/suburb in
+  // the address hierarchy. Lower zoom levels often collapse this to the city,
+  // which made nearby places such as Kirkstall display only as Leeds.
+  requestUrl.searchParams.set("zoom", "18");
   requestUrl.searchParams.set("lat", latitude.toString());
   requestUrl.searchParams.set("lon", longitude.toString());
   requestUrl.searchParams.set("accept-language", "en");

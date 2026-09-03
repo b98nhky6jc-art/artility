@@ -4,6 +4,11 @@ Artwork coordinates are the source of truth. This administrator-only, paged
 operation refreshes `town` and `city` from each artwork's existing latitude and
 longitude. It never changes coordinates.
 
+The reverse lookup requests address-level detail. `town` stores the most useful
+local area supplied by the map data (normally a suburb, then a neighbourhood or
+district), while `city` retains the wider city. Cards can therefore show labels
+such as `Kirkstall, Leeds` without repeating or replacing the coordinates.
+
 ## Before running it
 
 The Worker uses a Nominatim-compatible reverse-geocoding endpoint. By default

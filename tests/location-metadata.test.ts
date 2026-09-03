@@ -62,6 +62,57 @@ test("an artwork outside Leeds does not inherit Leeds", async () => {
   );
 });
 
+test("detailed reverse geocoding prefers a neighbourhood while retaining its city", async () => {
+  const metadata = await reverseGeocodeArtworkLocation(53.8151, -1.5944, {
+    fetcher: geocoderResponse({
+      suburb: "Kirkstall",
+      town: "Pudsey",
+      city: "Leeds",
+    }),
+  });
+
+  assert.deepEqual(metadata, { town: "Kirkstall", city: "Leeds" });
+});
+
+test("a stable suburb wins over an obscure micro-neighbourhood", async () => {
+  const metadata = await reverseGeocodeArtworkLocation(52.6422, -1.141, {
+    fetcher: geocoderResponse({
+      neighbourhood: "Waterside",
+      suburb: "Black Friars",
+      city: "Leicester",
+    }),
+  });
+
+  assert.deepEqual(metadata, { town: "Black Friars", city: "Leicester" });
+});
+
+test("a named island can supply the local place within a city", async () => {
+  const metadata = await reverseGeocodeArtworkLocation(52.6422, -1.141, {
+    fetcher: geocoderResponse({
+      islet: "Frog Island",
+      suburb: "Black Friars",
+      city: "Leicester",
+    }),
+  });
+
+  assert.deepEqual(metadata, { town: "Frog Island", city: "Leicester" });
+});
+
+test("reverse geocoding requests address-level detail for neighbourhood labels", async () => {
+  let requestedUrl: URL | null = null;
+
+  await reverseGeocodeArtworkLocation(53.8151, -1.5944, {
+    fetcher: async (input) => {
+      requestedUrl = new URL(input.toString());
+      return new Response(
+        JSON.stringify({ address: { suburb: "Kirkstall", city: "Leeds" } }),
+      );
+    },
+  });
+
+  assert.equal(requestedUrl?.searchParams.get("zoom"), "18");
+});
+
 test("metadata cleanup preserves correct coordinates while refreshing locality", async () => {
   const original = {
     latitude: 53.8008,
