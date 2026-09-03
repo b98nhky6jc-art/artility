@@ -41,6 +41,20 @@ test("PWA manifest uses the cache-busted Artility maskable icon", async () => {
     "utf8",
   );
 
-  assert.match(viteConfig, /artility-maskable-512-v2\.png/);
+  assert.match(viteConfig, /artility-maskable-512-v2\.png\?v=3/);
   assert.doesNotMatch(viteConfig, /src: "\/maskable-icon-512x512\.png"/);
+});
+
+test("browser icon fallbacks all use the current Artility mark", async () => {
+  const [document, favicon] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../public/favicon.svg", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(document, /artility-favicon-v3\.svg/);
+  assert.match(document, /favicon\.ico\?v=3/);
+  assert.match(document, /apple-touch-icon\.png\?v=3/);
+  assert.match(favicon, /#F37D59/);
+  assert.match(favicon, /#68C7C1/);
+  assert.doesNotMatch(favicon, /#863bff/i);
 });
