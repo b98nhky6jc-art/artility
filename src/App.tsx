@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import "./App.css";
 import ArtworkMap from "./ArtworkMap";
 import { authClient } from "./lib/auth-client";
@@ -14,6 +14,11 @@ import {
 import AddToWalkButton from "./AddToWalkButton";
 import { useArtilityLocation } from "./LocationContext";
 import PlaceSearch from "./PlaceSearch";
+import {
+  artworkBelongsToCategory,
+  DISCOVERY_CATEGORIES,
+  getDiscoveryCategoryBySlug,
+} from "./categories";
 
 
 type Artwork = {
@@ -38,6 +43,8 @@ function getDiscoveryArtworkTitle(artwork: Artwork) {
 }
 
 function App() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [artworks, setArtworks] = useState<Artwork[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -49,6 +56,9 @@ function App() {
     ARTWORK_PAGE_SIZE,
   );
   const sortWasChosen = useRef(false);
+  const activeCategory = getDiscoveryCategoryBySlug(
+    new URLSearchParams(location.search).get("category"),
+  );
   const { data: session } = authClient.useSession();
   const canContribute = canUserContribute(session?.user);
   const {
@@ -106,9 +116,18 @@ function App() {
       ? "newest"
       : artworkSort;
 
+  const categoryArtworks = useMemo(
+    () => activeCategory
+      ? artworks.filter((artwork) =>
+          artworkBelongsToCategory(artwork.infrastructure_type, activeCategory),
+        )
+      : artworks,
+    [activeCategory, artworks],
+  );
+
   const { sortedArtworks, artworkDistances } = useMemo(
-    () => sortArtworks(artworks, activeLocation, effectiveArtworkSort),
-    [activeLocation, artworks, effectiveArtworkSort],
+    () => sortArtworks(categoryArtworks, activeLocation, effectiveArtworkSort),
+    [activeLocation, categoryArtworks, effectiveArtworkSort],
   );
 
   const visibleArtworks = sortedArtworks.slice(0, visibleArtworkCount);
@@ -120,6 +139,17 @@ function App() {
     sortWasChosen.current = true;
     setArtworkSort(event.target.value as ArtworkSort);
     setVisibleArtworkCount(ARTWORK_PAGE_SIZE);
+  }
+
+  function handleCategoryChange(event: React.ChangeEvent<HTMLSelectElement>) {
+    const categorySlug = event.target.value;
+
+    setVisibleArtworkCount(ARTWORK_PAGE_SIZE);
+    navigate({
+      pathname: "/",
+      search: categorySlug ? `?category=${categorySlug}` : "",
+      hash: "#nearby",
+    });
   }
 
   function preferClosestLocationSort() {
@@ -233,7 +263,7 @@ function App() {
 
           <div className="map-wrapper" id="home-map">
             <ArtworkMap
-              artworks={artworks}
+              artworks={categoryArtworks}
               userLocation={activeMode === "device" ? deviceLocation : null}
               focusLocation={activeLocation}
               preserveUserLocation={Boolean(activeLocation)}
@@ -253,31 +283,61 @@ function App() {
                     ? `EXPLORE ${manualPlace?.name.toUpperCase() ?? "A PLACE"}`
                     : "DISCOVER"}
               </span>
-              <h3>Nearby artwork</h3>
+              <h3>{activeCategory ? activeCategory.name : "Nearby artwork"}</h3>
+              {activeCategory && (
+                <p className="active-category-summary">
+                  Showing only {activeCategory.name.toLowerCase()} artwork
+                </p>
+              )}
             </div>
 
-            <label className="discovery-sort-control">
-              <span>Sort by</span>
-              <select
-                className="artist-sort"
-                aria-label="Sort artwork"
-                value={effectiveArtworkSort}
-                onChange={handleArtworkSortChange}
-              >
-                {activeLocation && <option value="closest">Closest</option>}
-                {activeLocation && <option value="furthest">Furthest</option>}
-                <option value="newest">Newest</option>
-                <option value="oldest">Oldest</option>
-                <option value="artist-az">Artist A–Z</option>
-                <option value="artist-za">Artist Z–A</option>
-              </select>
-            </label>
+            <div className="discovery-controls">
+              <label className="discovery-sort-control">
+                <span>Category</span>
+                <select
+                  className="artist-sort"
+                  aria-label="Filter artwork by category"
+                  value={activeCategory?.slug ?? ""}
+                  onChange={handleCategoryChange}
+                >
+                  <option value="">All categories</option>
+                  {DISCOVERY_CATEGORIES.map((category) => (
+                    <option key={category.slug} value={category.slug}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="discovery-sort-control">
+                <span>Sort by</span>
+                <select
+                  className="artist-sort"
+                  aria-label="Sort artwork"
+                  value={effectiveArtworkSort}
+                  onChange={handleArtworkSortChange}
+                >
+                  {activeLocation && <option value="closest">Closest</option>}
+                  {activeLocation && <option value="furthest">Furthest</option>}
+                  <option value="newest">Newest</option>
+                  <option value="oldest">Oldest</option>
+                  <option value="artist-az">Artist A–Z</option>
+                  <option value="artist-za">Artist Z–A</option>
+                </select>
+              </label>
+            </div>
           </div>
 
           {loading && <p className="message">Loading artwork…</p>}
 
           {error && (
             <p className="message error">Couldn’t load artwork: {error}</p>
+          )}
+
+          {!loading && !error && sortedArtworks.length === 0 && (
+            <p className="message">
+              No artwork has been added to this category yet.
+            </p>
           )}
 
           <div className="artwork-grid">

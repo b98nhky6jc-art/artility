@@ -677,6 +677,18 @@ main {
   text-transform: uppercase;
 }
 
+.discovery-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.active-category-summary {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
 .discovery-sort-control .artist-sort {
   min-height: 48px;
   padding-block: 11px;
@@ -4067,7 +4079,7 @@ main {
     padding: 4px 6px;
 
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
 
     background: var(--paper);
 
@@ -4078,7 +4090,7 @@ main {
   }
 
   .mobile-nav.has-moderation {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
   }
 
   .mobile-nav a,
@@ -4592,6 +4604,22 @@ main {
   letter-spacing: 0.1em;
 }
 
+.category-card-placeholder {
+  padding: 18px;
+  flex-direction: column;
+  gap: 10px;
+  text-align: center;
+}
+
+.category-card-placeholder span:first-child {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.category-card-placeholder span:last-child {
+  font-size: 0.72rem;
+}
+
 .artist-card-copy {
   padding: 18px;
 }
@@ -4713,6 +4741,17 @@ main {
   .artist-card-copy,
   .artist-artwork-copy {
     padding: 12px;
+  }
+}
+
+@media (max-width: 700px) {
+  .section-heading.nearby-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .discovery-controls {
+    grid-template-columns: 1fr;
   }
 }
 .detail-gallery {

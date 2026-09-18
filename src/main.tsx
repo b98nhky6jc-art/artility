@@ -12,6 +12,7 @@ import Login from "./Login.tsx";
 import MobileNav from "./MobileNav.tsx";
 import Contact from "./Contact.tsx";
 import Artists from "./Artists.tsx";
+import Categories from "./Categories.tsx";
 import ArtistDetail from "./ArtistDetail.tsx";
 import VerifyEmail from "./VerifyEmail.tsx";
 import SiteHeader from "./SiteHeader.tsx";
@@ -48,6 +49,7 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/copyright" element={<Copyright />} />
             <Route path="/verify-email" element={<VerifyEmail />} />
             <Route path="/artists" element={<Artists />} />
+            <Route path="/categories" element={<Categories />} />
             <Route path="/artist/:id" element={<ArtistDetail />} />
             <Route path="/admin/moderation" element={<Moderation />} />
           </Routes>

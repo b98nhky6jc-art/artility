@@ -147,12 +147,16 @@ export default function ArtworkMap({
   useEffect(() => {
     const map = mapRef.current;
 
-    if (!map || artworks.length === 0) {
+    if (!map) {
       return;
     }
 
     markersRef.current.forEach((marker) => marker.remove());
     markersRef.current = [];
+
+    if (artworks.length === 0) {
+      return;
+    }
 
     const bounds = new maplibregl.LngLatBounds();
 

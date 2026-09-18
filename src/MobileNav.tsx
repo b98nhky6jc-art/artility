@@ -115,6 +115,14 @@ export default function MobileNav() {
         <span>Artists</span>
       </Link>
 
+      <Link
+        to="/categories"
+        className={location.pathname.startsWith("/categories") ? "active" : ""}
+      >
+        <span className="nav-icon">▦</span>
+        <span>Categories</span>
+      </Link>
+
       {isAdmin && (
         <Link
           to="/admin/moderation"

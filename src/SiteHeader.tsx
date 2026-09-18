@@ -48,6 +48,7 @@ export default function SiteHeader() {
   }, [location.hash, location.pathname]);
 
   const isArtists = location.pathname.startsWith("/artist");
+  const isCategories = location.pathname.startsWith("/categories");
   const isExplore = location.pathname === "/";
   const isContact = location.pathname === "/contact";
   const isAddArtwork = location.pathname === "/add-artwork";
@@ -84,6 +85,14 @@ export default function SiteHeader() {
           aria-current={isArtists ? "page" : undefined}
         >
           Artists
+        </Link>
+
+        <Link
+          to="/categories"
+          className="nav-link"
+          aria-current={isCategories ? "page" : undefined}
+        >
+          Categories
         </Link>
 
         <Link
