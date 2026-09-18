@@ -1734,6 +1734,27 @@ export default {
       );
     }
 
+    if (url.pathname === "/api/tags" && request.method === "GET") {
+      const result = await env.DB.prepare(`
+        SELECT MIN(artwork_tags.tag) AS tag,
+               COUNT(DISTINCT artwork_tags.artwork_id) AS artwork_count
+        FROM artwork_tags
+        INNER JOIN artworks ON artworks.id = artwork_tags.artwork_id
+        WHERE EXISTS (
+          SELECT 1
+          FROM photos
+          WHERE photos.artwork_id = artworks.id
+            AND photos.moderation_state = 'approved'
+        )
+        GROUP BY artwork_tags.tag COLLATE NOCASE
+        ORDER BY artwork_count DESC, tag COLLATE NOCASE ASC
+      `).all<{ tag: string; artwork_count: number }>();
+
+      return Response.json(result.results, {
+        headers: { "cache-control": "public, max-age=60" },
+      });
+    }
+
     if (
       url.pathname === "/api/location/approximate" &&
       request.method === "GET"
@@ -2816,7 +2837,7 @@ export default {
         if (!tags) {
           artworkUploadMeasurement.finish({ outcome: "invalid artwork tags" });
           return Response.json(
-            { error: "Choose up to five valid artwork tags" },
+            { error: "Add up to five tags of 2–40 characters each" },
             { status: 400 },
           );
         }
@@ -3918,7 +3939,7 @@ if (artworkDetailMatch && request.method === "GET") {
           if (key === "tags") {
             if (!normaliseArtworkTags(value)) {
               return Response.json(
-                { error: "Choose up to five valid artwork tags" },
+                { error: "Add up to five tags of 2–40 characters each" },
                 { status: 400 },
               );
             }

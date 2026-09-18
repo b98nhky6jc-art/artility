@@ -1,26 +1,30 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  ARTWORK_TAGS,
   getArtworkTagBySlug,
   MAX_ARTWORK_TAGS,
+  normaliseArtworkTag,
   normaliseArtworkTags,
   slugifyDiscoveryValue,
 } from "../shared/artwork-tags.ts";
 
-test("artwork tags are controlled, stable and limited", () => {
-  assert.equal(ARTWORK_TAGS.length, 9);
+test("artwork tags are user-defined, URL-safe and limited", () => {
   assert.equal(MAX_ARTWORK_TAGS, 5);
-  assert.equal(getArtworkTagBySlug("street-art"), null);
-  assert.equal(getArtworkTagBySlug("botanical"), "Botanical");
+  assert.equal(
+    getArtworkTagBySlug(["Street art", "Local history"], "street-art"),
+    "Street art",
+  );
+  assert.equal(getArtworkTagBySlug(["Street art"], "botanical"), null);
   assert.equal(slugifyDiscoveryValue("St. John's"), "st-john-s");
 });
 
-test("tag input rejects arbitrary values and removes duplicates", () => {
-  assert.deepEqual(normaliseArtworkTags(["abstract", "Abstract", "Portrait"]), [
-    "Abstract",
-    "Portrait",
-  ]);
-  assert.equal(normaliseArtworkTags(["Unmoderated tag"]), null);
+test("tag input accepts contributor tags and removes equivalent duplicates", () => {
+  assert.deepEqual(
+    normaliseArtworkTags(["  abstract ", "Abstract", "Local   history"]),
+    ["abstract", "Local history"],
+  );
+  assert.equal(normaliseArtworkTag("#murals"), "murals");
+  assert.deepEqual(normaliseArtworkTags(["Contributor chosen"]), ["Contributor chosen"]);
+  assert.equal(normaliseArtworkTags(["<script>"]), null);
   assert.equal(normaliseArtworkTags(new Array(6).fill("Abstract")), null);
 });

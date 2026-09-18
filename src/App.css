@@ -4716,14 +4716,14 @@ main {
   font-weight: 400;
 }
 
-.artwork-tag-picker > div,
+.artwork-tag-selection,
 .artwork-tag-list {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.artwork-tag-picker label,
+.artwork-tag-selection button,
 .artwork-tag-list a {
   padding: 8px 12px;
   border: 1px solid var(--teal);
@@ -4735,16 +4735,35 @@ main {
   text-decoration: none;
 }
 
-.artwork-tag-picker label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.artwork-tag-selection button {
   cursor: pointer;
 }
 
-.artwork-tag-picker input {
-  width: auto;
-  margin: 0;
+.artwork-tag-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.artwork-tag-entry input {
+  width: 100%;
+  min-width: 0;
+}
+
+.artwork-tag-entry .secondary-button {
+  min-height: 44px;
+  padding-inline: 18px;
+}
+
+.artwork-tag-help,
+.artwork-tag-error {
+  margin: 8px 0 0;
+  font-size: 0.82rem;
+}
+
+.artwork-tag-help {
+  color: var(--muted);
 }
 
 .artwork-tag-list {

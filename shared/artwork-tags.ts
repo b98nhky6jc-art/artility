@@ -1,28 +1,28 @@
-export const ARTWORK_TAGS = [
-  "Abstract",
-  "Animals",
-  "Botanical",
-  "Community",
-  "Geometric",
-  "Heritage",
-  "Portrait",
-  "Typography",
-  "Whimsical",
-] as const;
-
-export type ArtworkTag = (typeof ARTWORK_TAGS)[number];
+export type ArtworkTag = string;
 export const MAX_ARTWORK_TAGS = 5;
 
-const TAG_BY_KEY = new Map(
-  ARTWORK_TAGS.map((tag) => [tag.toLocaleLowerCase("en"), tag]),
-);
+export const MIN_ARTWORK_TAG_LENGTH = 2;
+export const MAX_ARTWORK_TAG_LENGTH = 40;
 
 export function normaliseArtworkTag(value: unknown): ArtworkTag | null {
-  if (typeof value !== "string") {
+  if (typeof value !== "string") return null;
+
+  const tag = value.trim().replace(/^#+/, "").replace(/\s+/g, " ");
+
+  if (
+    tag.length < MIN_ARTWORK_TAG_LENGTH ||
+    tag.length > MAX_ARTWORK_TAG_LENGTH ||
+    /[<>]/.test(tag) ||
+    [...tag].some((character) => {
+      const code = character.charCodeAt(0);
+      return code < 32 || code === 127;
+    }) ||
+    !slugifyDiscoveryValue(tag)
+  ) {
     return null;
   }
 
-  return TAG_BY_KEY.get(value.trim().toLocaleLowerCase("en")) ?? null;
+  return tag;
 }
 
 export function normaliseArtworkTags(values: unknown): ArtworkTag[] | null {
@@ -31,6 +31,7 @@ export function normaliseArtworkTags(values: unknown): ArtworkTag[] | null {
   }
 
   const tags: ArtworkTag[] = [];
+  const keys = new Set<string>();
 
   for (const value of values) {
     const tag = normaliseArtworkTag(value);
@@ -39,7 +40,10 @@ export function normaliseArtworkTags(values: unknown): ArtworkTag[] | null {
       return null;
     }
 
-    if (!tags.includes(tag)) {
+    const key = slugifyDiscoveryValue(tag);
+
+    if (!keys.has(key)) {
+      keys.add(key);
       tags.push(tag);
     }
   }
@@ -56,6 +60,7 @@ export function slugifyDiscoveryValue(value: string) {
     .replace(/^-|-$/g, "");
 }
 
-export function getArtworkTagBySlug(slug: string | null) {
-  return ARTWORK_TAGS.find((tag) => slugifyDiscoveryValue(tag) === slug) ?? null;
+export function getArtworkTagBySlug(tags: readonly string[], slug: string | null) {
+  if (!slug) return null;
+  return tags.find((tag) => slugifyDiscoveryValue(tag) === slug) ?? null;
 }

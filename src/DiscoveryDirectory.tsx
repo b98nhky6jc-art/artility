@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import "./App.css";
-import { ARTWORK_TAGS, slugifyDiscoveryValue } from "../shared/artwork-tags";
+import { slugifyDiscoveryValue } from "../shared/artwork-tags";
 import { usePageMetadata } from "./pageMetadata";
 
 type Artwork = {
@@ -56,7 +56,7 @@ export default function DiscoveryDirectory({ type }: { type: "places" | "tags" }
     title,
     isPlaces
       ? "Browse public artwork by town and city on Artility."
-      : "Browse public artwork using Artility’s controlled descriptive tags.",
+      : "Browse public artwork using tags added by Artility contributors.",
   );
 
   useEffect(() => {
@@ -73,14 +73,20 @@ export default function DiscoveryDirectory({ type }: { type: "places" | "tags" }
   const entries = useMemo<DirectoryEntry[]>(() => {
     const names = isPlaces
       ? [...new Set(artworks.flatMap((artwork) => [artwork.town, artwork.city]).filter((value): value is string => Boolean(value?.trim())))]
-      : [...ARTWORK_TAGS];
+      : [...new Map(
+        artworks
+          .flatMap((artwork) => artwork.tags ?? [])
+          .map((tag) => [slugifyDiscoveryValue(tag), tag] as const),
+      ).values()];
 
     return names
       .map((name) => {
         const matches = artworks.filter((artwork) =>
           isPlaces
             ? [artwork.town, artwork.city].some((place) => place?.localeCompare(name, undefined, { sensitivity: "base" }) === 0)
-            : artwork.tags?.includes(name),
+            : artwork.tags?.some(
+              (tag) => slugifyDiscoveryValue(tag) === slugifyDiscoveryValue(name),
+            ),
         );
 
         return {
@@ -90,7 +96,7 @@ export default function DiscoveryDirectory({ type }: { type: "places" | "tags" }
           photo: matches.find((artwork) => artwork.primary_photo)?.primary_photo ?? null,
         };
       })
-      .sort((a, b) => isPlaces ? a.name.localeCompare(b.name) : 0);
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [artworks, isPlaces]);
 
   return (

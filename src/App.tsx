@@ -20,7 +20,6 @@ import {
   getDiscoveryCategoryBySlug,
 } from "./categories";
 import {
-  ARTWORK_TAGS,
   getArtworkTagBySlug,
   slugifyDiscoveryValue,
 } from "../shared/artwork-tags";
@@ -68,7 +67,16 @@ function App() {
     new URLSearchParams(location.search).get("category"),
   );
   const searchQuery = new URLSearchParams(location.search).get("q") ?? "";
+  const tagOptions = useMemo(() => {
+    const tagsBySlug = new Map<string, string>();
+    for (const tag of artworks.flatMap((artwork) => artwork.tags ?? [])) {
+      const slug = slugifyDiscoveryValue(tag);
+      if (!tagsBySlug.has(slug)) tagsBySlug.set(slug, tag);
+    }
+    return [...tagsBySlug.values()].sort((left, right) => left.localeCompare(right));
+  }, [artworks]);
   const activeTag = getArtworkTagBySlug(
+    tagOptions,
     tagSlug ?? new URLSearchParams(location.search).get("tag"),
   );
   const { data: session } = authClient.useSession();
@@ -161,7 +169,12 @@ function App() {
           activeCategory &&
           !artworkBelongsToCategory(artwork.infrastructure_type, activeCategory)
         ) return false;
-        if (activeTag && !artwork.tags?.includes(activeTag)) return false;
+        if (
+          activeTag &&
+          !artwork.tags?.some(
+            (tag) => slugifyDiscoveryValue(tag) === slugifyDiscoveryValue(activeTag),
+          )
+        ) return false;
         if (
           placeSlug &&
           ![artwork.town, artwork.city].some(
@@ -415,7 +428,7 @@ function App() {
                   onChange={handleTagChange}
                 >
                   <option value="">All tags</option>
-                  {ARTWORK_TAGS.map((tag) => (
+                  {tagOptions.map((tag) => (
                     <option key={tag} value={slugifyDiscoveryValue(tag)}>{tag}</option>
                   ))}
                 </select>

@@ -18,12 +18,8 @@ import {
   normaliseInfrastructureType,
   type InfrastructureType,
 } from "../shared/infrastructure-types";
-import {
-  ARTWORK_TAGS,
-  MAX_ARTWORK_TAGS,
-  slugifyDiscoveryValue,
-  type ArtworkTag,
-} from "../shared/artwork-tags";
+import { slugifyDiscoveryValue } from "../shared/artwork-tags";
+import ArtworkTagInput from "./ArtworkTagInput";
 import { usePageMetadata } from "./pageMetadata";
 
 
@@ -44,7 +40,7 @@ type Artwork = {
   instagram_handle: string | null;
   primary_photo: string | null;
   photo_added_at: string | null;
-  tags: ArtworkTag[];
+  tags: string[];
 };
 type ArtworkPhoto = {
   id: number;
@@ -188,7 +184,7 @@ export default function ArtworkDetail() {
   const [editArtistName, setEditArtistName] = useState("");
   const [editInstagramHandle, setEditInstagramHandle] = useState("");
   const [editDescription, setEditDescription] = useState("");
-  const [editTags, setEditTags] = useState<ArtworkTag[]>([]);
+  const [editTags, setEditTags] = useState<string[]>([]);
   const [editInfrastructureType, setEditInfrastructureType] =
     useState<InfrastructureType>("Utility box / cabinet");
   const [editLatitude, setEditLatitude] = useState("");
@@ -757,26 +753,7 @@ export default function ArtworkDetail() {
                   />
                 </label>
 
-                <fieldset className="artwork-tag-picker">
-                  <legend>Tags <span>Choose up to {MAX_ARTWORK_TAGS}</span></legend>
-                  <div>
-                    {ARTWORK_TAGS.map((tag) => (
-                      <label key={tag}>
-                        <input
-                          type="checkbox"
-                          checked={editTags.includes(tag)}
-                          disabled={!editTags.includes(tag) && editTags.length >= MAX_ARTWORK_TAGS}
-                          onChange={(event) => setEditTags((current) =>
-                            event.target.checked
-                              ? [...current, tag]
-                              : current.filter((value) => value !== tag),
-                          )}
-                        />
-                        <span>{tag}</span>
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
+                <ArtworkTagInput value={editTags} onChange={setEditTags} />
 
                 {isAdmin && (
                   <fieldset className="edit-location-fields">

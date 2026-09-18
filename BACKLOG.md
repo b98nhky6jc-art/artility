@@ -66,7 +66,7 @@ GitHub Issues contain actionable remaining work. This file retains the full capa
 | Browse by category | **Done** | Includes Little Library as a first-class category. |
 | Search/browse artists | **Done** | `Artists.tsx` and artist API. |
 | Search artwork/title/town/city | **Done** | URL-driven text search covers title, description, artist, town, city, category and tags in `src/App.tsx`. |
-| Tags and tag discovery | **Done** | Controlled tags, upload/edit controls and shareable `/tags/:tagSlug` pages. |
+| Tags and tag discovery | **Done** | Contributor-defined tags with existing-tag suggestions, upload/edit controls and shareable `/tags/:tagSlug` pages. |
 | Persist map viewport when returning | **Done** | `artility:last-map-viewport` in `ArtworkMap.tsx`. |
 | Map marker clustering/scalable marker rendering | **Not started** | Individual DOM marker per artwork; covered by [#3](https://github.com/b98nhky6jc-art/artility/issues/3). |
 | Graceful map failure/fallback | **Defect** | WebGL failure can blank the app; [#1](https://github.com/b98nhky6jc-art/artility/issues/1). |
