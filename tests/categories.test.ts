@@ -13,12 +13,20 @@ test("category discovery uses the requested controlled directory and stable slug
     { name: "Bollard / post", slug: "bollard-post" },
     { name: "Door / shutter", slug: "door-shutter" },
     { name: "Bench / street furniture", slug: "bench-street-furniture" },
+    { name: "Little library", slug: "little-library" },
     { name: "Tree / natural feature", slug: "tree-natural-feature" },
     { name: "Bridge / underpass", slug: "bridge-underpass" },
     { name: "Sign / panel", slug: "sign-panel" },
     { name: "Sculpture / installation", slug: "sculpture-installation" },
     { name: "Other", slug: "other" },
   ]);
+});
+
+test("Little library is available as a first-class discovery category", () => {
+  const littleLibrary = getDiscoveryCategoryBySlug("little-library");
+
+  assert.ok(littleLibrary);
+  assert.equal(artworkBelongsToCategory("Little library", littleLibrary), true);
 });
 
 test("category slugs resolve and legacy artwork values match canonical categories", () => {

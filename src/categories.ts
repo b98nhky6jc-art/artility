@@ -14,6 +14,7 @@ export const DISCOVERY_CATEGORIES: readonly DiscoveryCategory[] = [
   { name: "Bollard / post", slug: "bollard-post" },
   { name: "Door / shutter", slug: "door-shutter" },
   { name: "Bench / street furniture", slug: "bench-street-furniture" },
+  { name: "Little library", slug: "little-library" },
   { name: "Tree / natural feature", slug: "tree-natural-feature" },
   { name: "Bridge / underpass", slug: "bridge-underpass" },
   { name: "Sign / panel", slug: "sign-panel" },
