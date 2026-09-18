@@ -1,4 +1,25 @@
-# React + TypeScript + Vite
+# Artility
+
+Artility is a community map of public art hiding in plain sight. It helps people discover local artists, explore their community on foot, collect what they find and contribute useful discoveries for others.
+
+- Live site: [artility.co.uk](https://artility.co.uk)
+- Audited capability matrix: [BACKLOG.md](BACKLOG.md)
+- Master backlog tracker: [GitHub issue #11](https://github.com/b98nhky6jc-art/artility/issues/11)
+
+## Development
+
+```bash
+npm ci
+npm test
+npm run build
+npm run dev
+```
+
+## Stack
+
+React, TypeScript, Vite, Cloudflare Workers, D1, R2, MapLibre and Better Auth.
+
+## Template notes
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
@@ -47,7 +68,6 @@ export default defineConfig([
 You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
 
 ```js
-// eslint.config.js
 import reactX from 'eslint-plugin-react-x'
 import reactDom from 'eslint-plugin-react-dom'
 
@@ -59,8 +79,10 @@ export default defineConfig([
       // Other configs...
       // Enable lint rules for React
       reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
+      // Alternatively, use this for stricter rules
       reactDom.configs.recommended,
+
+      // Other configs...
     ],
     languageOptions: {
       parserOptions: {
