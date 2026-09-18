@@ -173,8 +173,14 @@ export default function ArtworkMap({
       const popupContent = document.createElement("div");
       popupContent.className = "artwork-map-popup";
 
-      const popupTitle = document.createElement("strong");
+      const popupTitle = document.createElement("a");
+      popupTitle.href = `/artwork/${artwork.id}`;
+      popupTitle.className = "artwork-popup-link";
       popupTitle.textContent = getArtworkDisplayTitle(artwork);
+      popupTitle.setAttribute(
+        "aria-label",
+        `View ${getArtworkDisplayTitle(artwork)} artwork details`,
+      );
 
       const popupArtist = document.createElement("span");
       popupArtist.textContent =

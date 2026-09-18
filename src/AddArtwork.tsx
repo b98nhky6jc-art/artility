@@ -18,6 +18,11 @@ import {
   logUploadPerformance,
   startUploadMeasurement,
 } from "../shared/upload-performance";
+import {
+  ARTWORK_TAGS,
+  MAX_ARTWORK_TAGS,
+  type ArtworkTag,
+} from "../shared/artwork-tags";
 
 type Stage = "upload" | "review" | "submitted";
 type UploadModerationNotice = "processing" | "review" | "rejected";
@@ -447,6 +452,7 @@ export default function AddArtwork() {
   const [artistName, setArtistName] = useState("");
   const [instagramHandle, setInstagramHandle] = useState("");
   const [description, setDescription] = useState("");
+  const [tags, setTags] = useState<ArtworkTag[]>([]);
   const [infrastructureType, setInfrastructureType] =
     useState<InfrastructureType>("Utility box / cabinet");
 
@@ -736,6 +742,7 @@ export default function AddArtwork() {
       formData.append("instagram_handle", instagramHandle);
       formData.append("description", description);
       formData.append("infrastructure_type", infrastructureType);
+      tags.forEach((tag) => formData.append("tags", tag));
       formData.append("latitude", latitude.toString());
       formData.append("longitude", longitude.toString());
 
@@ -991,6 +998,27 @@ export default function AddArtwork() {
                     rows={4}
                   />
                 </label>
+
+                <fieldset className="artwork-tag-picker">
+                  <legend>Tags <span>Choose up to {MAX_ARTWORK_TAGS}</span></legend>
+                  <div>
+                    {ARTWORK_TAGS.map((tag) => (
+                      <label key={tag}>
+                        <input
+                          type="checkbox"
+                          checked={tags.includes(tag)}
+                          disabled={!tags.includes(tag) && tags.length >= MAX_ARTWORK_TAGS}
+                          onChange={(event) => setTags((current) =>
+                            event.target.checked
+                              ? [...current, tag]
+                              : current.filter((value) => value !== tag),
+                          )}
+                        />
+                        <span>{tag}</span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
 
                 <div className="location-review">
                   <div>

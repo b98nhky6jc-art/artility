@@ -49,7 +49,10 @@ export default function SiteHeader() {
 
   const isArtists = location.pathname.startsWith("/artist");
   const isCategories = location.pathname.startsWith("/categories");
-  const isExplore = location.pathname === "/";
+  const isExplore =
+    location.pathname === "/" ||
+    location.pathname.startsWith("/places/") ||
+    location.pathname.startsWith("/tags/");
   const isContact = location.pathname === "/contact";
   const isAddArtwork = location.pathname === "/add-artwork";
   const isModeration = location.pathname.startsWith("/admin/moderation");

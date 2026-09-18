@@ -6,6 +6,7 @@ import {
   DISCOVERY_CATEGORIES,
   type DiscoveryCategory,
 } from "./categories";
+import { usePageMetadata } from "./pageMetadata";
 
 type Artwork = {
   id: number;
@@ -44,6 +45,10 @@ export default function Categories() {
   const [artworks, setArtworks] = useState<Artwork[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  usePageMetadata(
+    "Categories",
+    "Explore public artwork by the places and objects it lives on.",
+  );
 
   useEffect(() => {
     async function loadArtworks() {

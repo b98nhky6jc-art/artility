@@ -18,6 +18,13 @@ import {
   normaliseInfrastructureType,
   type InfrastructureType,
 } from "../shared/infrastructure-types";
+import {
+  ARTWORK_TAGS,
+  MAX_ARTWORK_TAGS,
+  slugifyDiscoveryValue,
+  type ArtworkTag,
+} from "../shared/artwork-tags";
+import { usePageMetadata } from "./pageMetadata";
 
 
 type Artwork = {
@@ -37,6 +44,7 @@ type Artwork = {
   instagram_handle: string | null;
   primary_photo: string | null;
   photo_added_at: string | null;
+  tags: ArtworkTag[];
 };
 type ArtworkPhoto = {
   id: number;
@@ -180,6 +188,7 @@ export default function ArtworkDetail() {
   const [editArtistName, setEditArtistName] = useState("");
   const [editInstagramHandle, setEditInstagramHandle] = useState("");
   const [editDescription, setEditDescription] = useState("");
+  const [editTags, setEditTags] = useState<ArtworkTag[]>([]);
   const [editInfrastructureType, setEditInfrastructureType] =
     useState<InfrastructureType>("Utility box / cabinet");
   const [editLatitude, setEditLatitude] = useState("");
@@ -203,6 +212,7 @@ export default function ArtworkDetail() {
     setEditArtistName(artwork.artist_name ?? "");
     setEditInstagramHandle(artwork.instagram_handle ?? "");
     setEditDescription(artwork.description ?? "");
+    setEditTags(artwork.tags ?? []);
     setEditInfrastructureType(
       normaliseInfrastructureType(artwork.infrastructure_type) ?? "Other",
     );
@@ -267,6 +277,7 @@ export default function ArtworkDetail() {
           instagram_handle: editInstagramHandle,
           description: editDescription,
           infrastructure_type: editInfrastructureType,
+          tags: editTags,
           ...(isAdmin
             ? {
                 latitude: Number(editLatitude),
@@ -303,6 +314,7 @@ export default function ArtworkDetail() {
             longitude: data.artwork?.longitude ?? current.longitude,
             town: data.artwork?.town ?? null,
             city: data.artwork?.city ?? null,
+            tags: data.artwork?.tags ?? current.tags,
           }
           : current,
       );
@@ -466,6 +478,14 @@ export default function ArtworkDetail() {
     !checkingIn &&
     (withinCheckinRadius || isLocalhost);
   const approvedStatusType = currentApprovedStatus?.type ?? artwork?.status ?? "present";
+  usePageMetadata(
+    artwork ? getArtworkDisplayTitle(artwork) : "Artwork",
+    artwork?.description?.trim() ||
+      (artwork
+        ? `Public artwork${getArtworkLocality(artwork) ? ` in ${getArtworkLocality(artwork)}` : ""} on Artility.`
+        : "Discover public artwork on Artility."),
+    photos[0]?.storage_key ? `/api/images/${photos[0].storage_key}` : null,
+  );
 
   async function handleCheckin() {
     if (!artwork || !canCheckIn) {
@@ -619,10 +639,19 @@ export default function ArtworkDetail() {
 
             <p className="detail-meta">
               {formatInfrastructureType(artwork.infrastructure_type)}
-              {getArtworkLocality(artwork)
-                ? ` · ${getArtworkLocality(artwork)}`
-                : ""}
+              {getArtworkLocality(artwork) && (
+                <> · <Link to={`/places/${slugifyDiscoveryValue(getArtworkLocality(artwork)!)}`}>
+                  {getArtworkLocality(artwork)}
+                </Link></>
+              )}
             </p>
+            {artwork.tags?.length > 0 && (
+              <div className="artwork-tag-list" aria-label="Artwork tags">
+                {artwork.tags.map((tag) => (
+                  <Link key={tag} to={`/tags/${slugifyDiscoveryValue(tag)}`}>{tag}</Link>
+                ))}
+              </div>
+            )}
             {session?.user && !canContribute && (
               <EmailVerificationNotice email={session.user.email} compact />
             )}
@@ -727,6 +756,27 @@ export default function ArtworkDetail() {
                     placeholder="Optional details about the artwork"
                   />
                 </label>
+
+                <fieldset className="artwork-tag-picker">
+                  <legend>Tags <span>Choose up to {MAX_ARTWORK_TAGS}</span></legend>
+                  <div>
+                    {ARTWORK_TAGS.map((tag) => (
+                      <label key={tag}>
+                        <input
+                          type="checkbox"
+                          checked={editTags.includes(tag)}
+                          disabled={!editTags.includes(tag) && editTags.length >= MAX_ARTWORK_TAGS}
+                          onChange={(event) => setEditTags((current) =>
+                            event.target.checked
+                              ? [...current, tag]
+                              : current.filter((value) => value !== tag),
+                          )}
+                        />
+                        <span>{tag}</span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
 
                 {isAdmin && (
                   <fieldset className="edit-location-fields">

@@ -26,6 +26,7 @@ import Privacy from "./Privacy.tsx";
 import Copyright from "./Copyright.tsx";
 import ScrollToTop from "./ScrollToTop.tsx";
 import { LocationProvider } from "./LocationContext.tsx";
+import DiscoveryDirectory from "./DiscoveryDirectory.tsx";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -50,6 +51,10 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/verify-email" element={<VerifyEmail />} />
             <Route path="/artists" element={<Artists />} />
             <Route path="/categories" element={<Categories />} />
+            <Route path="/places" element={<DiscoveryDirectory type="places" />} />
+            <Route path="/places/:placeSlug" element={<App />} />
+            <Route path="/tags" element={<DiscoveryDirectory type="tags" />} />
+            <Route path="/tags/:tagSlug" element={<App />} />
             <Route path="/artist/:id" element={<ArtistDetail />} />
             <Route path="/admin/moderation" element={<Moderation />} />
           </Routes>

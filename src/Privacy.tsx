@@ -8,7 +8,7 @@ export default function Privacy() {
         <Link to="/" className="back-link">← Back to map</Link>
         <h1>Privacy policy</h1>
 
-        <p className="information-updated">Last updated 2 September 2026</p>
+        <p className="information-updated">Last updated 18 September 2026</p>
 
         <div className="information-list">
           <section>
@@ -39,11 +39,12 @@ export default function Privacy() {
           </section>
           <section>
             <h2>How long we keep information</h2>
-            <p>Account and contribution records are kept while they are needed to run Artility, resolve reports and meet legal or security obligations. Artwork submissions containing only rejected photos are deleted after the short review period, normally 24 hours after rejection.</p>
+            <p>Account records are kept until you delete your account or they are no longer needed. Artwork submissions containing only rejected photos are deleted after the short review period, normally 24 hours after rejection.</p>
+            <p>If you delete your account, authentication records, sessions, check-ins, saved location preferences and upload-security events are removed. Published artwork, photographs, revision history, status reports and moderation history are retained without their link to your account so the public map and its safety record remain coherent. We retain a deletion event identifier, timestamp and aggregate contribution counts, but not your name or email address.</p>
           </section>
           <section>
             <h2>Your choices and rights</h2>
-            <p>You can refuse browser location access and still browse the map. You may ask for access to, correction of or deletion of your personal information, or object to how it is used, by emailing us. We may need to verify your identity before acting on a request.</p>
+            <p>You can refuse browser location access and still browse the map. Signed-in users can download a machine-readable account export or permanently delete their account from My Finds. You may also ask for access to, correction of or deletion of your personal information, or object to how it is used, by emailing us. We may need to verify your identity before acting on a request.</p>
           </section>
           <section>
             <h2>Changes to this policy</h2>

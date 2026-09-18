@@ -1,7 +1,7 @@
 # Artility product backlog
 
 Last audited: **18 September 2026**  
-Repository revision: `958adbf`  
+Repository revision: current `main`  
 Master tracker: [#11](https://github.com/b98nhky6jc-art/artility/issues/11)
 
 ## Product north star
@@ -27,12 +27,12 @@ GitHub Issues contain actionable remaining work. This file retains the full capa
 | Priority | Work | Status | Tracking |
 |---|---|---|---|
 | P0 | Graceful map fallback when WebGL is unavailable | Defect | [#1](https://github.com/b98nhky6jc-art/artility/issues/1) |
-| P0 | Map pin/pop-up links to canonical artwork page | Not started | [#2](https://github.com/b98nhky6jc-art/artility/issues/2) |
+| P0 | Map pin/pop-up links to canonical artwork page | Done | [#2](https://github.com/b98nhky6jc-art/artility/issues/2) |
 | P1 | Initial bundle and map scalability | Partial | [#3](https://github.com/b98nhky6jc-art/artility/issues/3) |
-| P1 | Artwork search, tags and shareable discovery pages | Partial | [#4](https://github.com/b98nhky6jc-art/artility/issues/4) |
+| P1 | Artwork search, tags and shareable discovery pages | Done | [#4](https://github.com/b98nhky6jc-art/artility/issues/4) |
 | P1 | Favourites and complete personal collection | Partial | [#5](https://github.com/b98nhky6jc-art/artility/issues/5) |
 | P1 | Multi-artist attribution, claiming and merge tools | Partial | [#6](https://github.com/b98nhky6jc-art/artility/issues/6) |
-| P1 | Account export and deletion | Not started | [#7](https://github.com/b98nhky6jc-art/artility/issues/7) |
+| P1 | Account export and deletion | Done | [#7](https://github.com/b98nhky6jc-art/artility/issues/7) |
 | P2 | About, Terms and legal-navigation completion | Partial | [#8](https://github.com/b98nhky6jc-art/artility/issues/8) |
 | P2 | Generated distance/time Art Walks | Partial | [#9](https://github.com/b98nhky6jc-art/artility/issues/9) |
 | P2 | Moderation and contributor-control hardening | Partial | [#10](https://github.com/b98nhky6jc-art/artility/issues/10) |
@@ -65,12 +65,12 @@ GitHub Issues contain actionable remaining work. This file retains the full capa
 | Nearby distance sorting | **Done** | Closest/furthest/newest/oldest/artist sorting in `artworkDiscovery.ts`. |
 | Browse by category | **Done** | Includes Little Library as a first-class category. |
 | Search/browse artists | **Done** | `Artists.tsx` and artist API. |
-| Search artwork/title/town/city | **Not started** | Covered by [#4](https://github.com/b98nhky6jc-art/artility/issues/4). |
-| Tags and tag discovery | **Not started** | Covered by [#4](https://github.com/b98nhky6jc-art/artility/issues/4). |
+| Search artwork/title/town/city | **Done** | URL-driven text search covers title, description, artist, town, city, category and tags in `src/App.tsx`. |
+| Tags and tag discovery | **Done** | Controlled tags, upload/edit controls and shareable `/tags/:tagSlug` pages. |
 | Persist map viewport when returning | **Done** | `artility:last-map-viewport` in `ArtworkMap.tsx`. |
 | Map marker clustering/scalable marker rendering | **Not started** | Individual DOM marker per artwork; covered by [#3](https://github.com/b98nhky6jc-art/artility/issues/3). |
 | Graceful map failure/fallback | **Defect** | WebGL failure can blank the app; [#1](https://github.com/b98nhky6jc-art/artility/issues/1). |
-| Map pin to artwork page | **Not started** | Popup has text only; [#2](https://github.com/b98nhky6jc-art/artility/issues/2). |
+| Map pin to artwork page | **Done** | Popup titles are accessible links to `/artwork/:id`; regression tested. |
 
 ### Artwork records and pages
 
@@ -182,8 +182,8 @@ GitHub Issues contain actionable remaining work. This file retains the full capa
 | Contact route | **Done** | `Contact.tsx`. |
 | About page | **Not started** | [#8](https://github.com/b98nhky6jc-art/artility/issues/8). |
 | Terms page | **Not started** | [#8](https://github.com/b98nhky6jc-art/artility/issues/8). |
-| Account data export | **Not started** | [#7](https://github.com/b98nhky6jc-art/artility/issues/7). |
-| Self-service account deletion | **Not started** | [#7](https://github.com/b98nhky6jc-art/artility/issues/7). |
+| Account data export | **Done** | Authenticated machine-readable export from My Finds and `/api/account/export`. |
+| Self-service account deletion | **Done** | Deliberate typed confirmation, transactional deletion/anonymisation and documented retention policy. |
 
 ### Platform, reliability and growth
 
@@ -196,8 +196,8 @@ GitHub Issues contain actionable remaining work. This file retains the full capa
 | Automated test suite | **Done** | 74 tests passed during this audit. |
 | Production build | **Done** | TypeScript and Vite build passed during this audit. |
 | Route-level code splitting | **Not started** | [#3](https://github.com/b98nhky6jc-art/artility/issues/3). |
-| SEO/share metadata per public route | **Not started** | [#4](https://github.com/b98nhky6jc-art/artility/issues/4). |
-| City/town index pages | **Not started** | [#4](https://github.com/b98nhky6jc-art/artility/issues/4). |
+| SEO/share metadata per public route | **Done** | Route metadata is updated client-side and artwork/artist previews are rendered for crawlers at the edge. |
+| City/town index pages | **Done** | `/places` directory and shareable `/places/:placeSlug` discovery pages. |
 | Native iOS/Android clients | **Later** | PWA remains the current delivery model. |
 | Push notifications | **Later** | No current core-product requirement. |
 | Subscriptions/paid features | **Later** | No current core-product requirement. |
@@ -208,8 +208,8 @@ GitHub Issues contain actionable remaining work. This file retains the full capa
 
 Audit evidence used:
 
-- Repository source and database migrations at revision `958adbf`.
-- `npm test -- --run`: **74 passed, 0 failed**.
+- Repository source and database migrations on current `main`.
+- `npm test`: **81 passed, 0 failed**.
 - `npm run build`: completed successfully.
-- Production bundle observation: main client JavaScript approximately **1.49 MB / 417 KB gzip**.
+- Production bundle observation: main client JavaScript approximately **1.50 MB / 420 KB gzip**.
 - Public deployment check reproduced the WebGL blank-page failure.

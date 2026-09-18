@@ -43,12 +43,171 @@ import {
   bytesToMegabytes,
   startUploadMeasurement,
 } from "../shared/upload-performance.js";
+import {
+  normaliseArtworkTags,
+  type ArtworkTag,
+} from "../shared/artwork-tags.js";
+import {
+  ACCOUNT_DELETION_POLICY,
+  confirmsAccountDeletion,
+} from "../shared/account-data.js";
 
 type ArtilityEnv = Env & {
+  ASSETS: Fetcher;
   OPENROUTESERVICE_API_KEY?: string;
   LOCATION_GEOCODER_URL?: string;
   LOCATION_SEARCH_GEOCODER_URL?: string;
 };
+
+type ShareMetadata = {
+  title: string;
+  description: string;
+  image: string;
+};
+
+function titleCase(value: string) {
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+async function getShareMetadata(
+  env: ArtilityEnv,
+  url: URL,
+): Promise<ShareMetadata | null> {
+  const artworkMatch = url.pathname.match(/^\/artwork\/(\d+)$/);
+
+  if (artworkMatch) {
+    const artwork = await env.DB.prepare(`
+      SELECT artworks.id, artworks.title, artworks.description,
+        artworks.town, artworks.city, artworks.infrastructure_type,
+        photos.storage_key AS primary_photo
+      FROM artworks
+      LEFT JOIN photos
+        ON photos.artwork_id = artworks.id
+        AND photos.is_primary = 1
+        AND photos.moderation_state = 'approved'
+      WHERE artworks.id = ?
+        AND EXISTS (
+          SELECT 1 FROM photos AS publishable_photo
+          WHERE publishable_photo.artwork_id = artworks.id
+            AND publishable_photo.moderation_state = 'approved'
+        )
+      LIMIT 1
+    `)
+      .bind(Number(artworkMatch[1]))
+      .first<{
+        id: number;
+        title: string | null;
+        description: string | null;
+        town: string | null;
+        city: string | null;
+        infrastructure_type: string | null;
+        primary_photo: string | null;
+      }>();
+
+    if (!artwork) return null;
+
+    const place = artwork.town?.trim() || artwork.city?.trim();
+    const fallbackTitle = artwork.infrastructure_type
+      ? `${titleCase(artwork.infrastructure_type)}${place ? ` in ${place}` : ""}`
+      : place
+        ? `Artwork in ${place}`
+        : `Artwork #${artwork.id}`;
+
+    return {
+      title: `${artwork.title?.trim() || fallbackTitle} · Artility`,
+      description:
+        artwork.description?.trim() ||
+        `Discover this piece of public art${place ? ` in ${place}` : ""} on Artility.`,
+      image: artwork.primary_photo
+        ? new URL(`/api/images/${encodeURIComponent(artwork.primary_photo)}`, url.origin).toString()
+        : new URL("/pwa-512x512.png", url.origin).toString(),
+    };
+  }
+
+  const artistMatch = url.pathname.match(/^\/artist\/([^/]+)$/);
+
+  if (artistMatch) {
+    const artistId = decodeURIComponent(artistMatch[1]);
+    const artist =
+      artistId === "unknown"
+        ? { name: "Artist unknown", bio: null, primary_photo: null }
+        : await env.DB.prepare(`
+            SELECT artists.name, artists.bio,
+              (
+                SELECT photos.storage_key
+                FROM artworks
+                INNER JOIN photos
+                  ON photos.artwork_id = artworks.id
+                  AND photos.is_primary = 1
+                  AND photos.moderation_state = 'approved'
+                WHERE artworks.artist_id = artists.id
+                ORDER BY artworks.created_at DESC
+                LIMIT 1
+              ) AS primary_photo
+            FROM artists
+            WHERE artists.id = ?
+            LIMIT 1
+          `)
+            .bind(Number(artistId))
+            .first<{
+              name: string;
+              bio: string | null;
+              primary_photo: string | null;
+            }>();
+
+    if (!artist) return null;
+
+    return {
+      title: `${artist.name} · Artility`,
+      description:
+        artist.bio?.trim() ||
+        `Explore public artwork attributed to ${artist.name} on Artility.`,
+      image: artist.primary_photo
+        ? new URL(`/api/images/${encodeURIComponent(artist.primary_photo)}`, url.origin).toString()
+        : new URL("/pwa-512x512.png", url.origin).toString(),
+    };
+  }
+
+  return null;
+}
+
+async function renderSharePage(request: Request, env: ArtilityEnv, url: URL) {
+  const metadata = await getShareMetadata(env, url);
+  const response = await env.ASSETS.fetch(request);
+
+  if (!metadata || !response.headers.get("content-type")?.includes("text/html")) {
+    return response;
+  }
+
+  const values = new Map([
+    ['meta[name="description"]', metadata.description],
+    ['meta[property="og:title"]', metadata.title],
+    ['meta[property="og:description"]', metadata.description],
+    ['meta[property="og:url"]', url.toString()],
+    ['meta[property="og:image"]', metadata.image],
+    ['meta[name="twitter:title"]', metadata.title],
+    ['meta[name="twitter:description"]', metadata.description],
+    ['meta[name="twitter:image"]', metadata.image],
+  ]);
+
+  let rewriter = new HTMLRewriter().on("title", {
+    element(element) {
+      element.setInnerContent(metadata.title);
+    },
+  });
+
+  for (const [selector, content] of values) {
+    rewriter = rewriter.on(selector, {
+      element(element) {
+        element.setAttribute("content", content);
+      },
+    });
+  }
+
+  return rewriter.transform(response);
+}
 
 const MAX_PHOTOS_PER_ARTWORK = 5;
 const MAX_AUTOMATED_MODERATION_ATTEMPTS = 3;
@@ -122,6 +281,44 @@ type ArtworkLocationRecord = {
   town: string | null;
   city: string | null;
 };
+
+async function loadTagsForArtworks(env: Env, artworkIds: number[]) {
+  const tagsByArtwork = new Map<number, ArtworkTag[]>();
+
+  if (artworkIds.length === 0) {
+    return tagsByArtwork;
+  }
+
+  const placeholders = artworkIds.map(() => "?").join(", ");
+  const result = await env.DB.prepare(`
+    SELECT artwork_id, tag
+    FROM artwork_tags
+    WHERE artwork_id IN (${placeholders})
+    ORDER BY tag COLLATE NOCASE
+  `)
+    .bind(...artworkIds)
+    .all<{ artwork_id: number; tag: ArtworkTag }>();
+
+  for (const row of result.results) {
+    const tags = tagsByArtwork.get(row.artwork_id) ?? [];
+    tags.push(row.tag);
+    tagsByArtwork.set(row.artwork_id, tags);
+  }
+
+  return tagsByArtwork;
+}
+
+async function addTagsToArtworks<T extends { id: number }>(env: Env, artworks: T[]) {
+  const tagsByArtwork = await loadTagsForArtworks(
+    env,
+    artworks.map((artwork) => Number(artwork.id)),
+  );
+
+  return artworks.map((artwork) => ({
+    ...artwork,
+    tags: tagsByArtwork.get(Number(artwork.id)) ?? [],
+  }));
+}
 
 /**
  * Correct missing or duplicated locality fields left by earlier imports. This
@@ -1384,6 +1581,159 @@ export default {
       return auth.handler(request);
     }
 
+    if (url.pathname === "/api/account/export" && request.method === "GET") {
+      const session = await auth.api.getSession({ headers: request.headers });
+
+      if (!session?.user) {
+        return Response.json(
+          { error: "Not signed in", code: "NOT_SIGNED_IN" },
+          { status: 401 },
+        );
+      }
+
+      const userId = session.user.id;
+      const [account, homeArea, artworks, photos, revisions, checkins, statusReports] =
+        await Promise.all([
+          env.DB.prepare(`
+            SELECT id, name, email, emailVerified, createdAt, updatedAt,
+                   username, displayUsername
+            FROM "user"
+            WHERE id = ?
+            LIMIT 1
+          `).bind(userId).first(),
+          env.DB.prepare(`
+            SELECT town, city, latitude, longitude, updated_at
+            FROM user_home_areas
+            WHERE user_id = ?
+            LIMIT 1
+          `).bind(userId).first(),
+          env.DB.prepare(`
+            SELECT id, title, description, latitude, longitude, town, city,
+                   infrastructure_type, status, created_at, updated_at
+            FROM artworks
+            WHERE added_by = ?
+            ORDER BY created_at ASC
+          `).bind(userId).all(),
+          env.DB.prepare(`
+            SELECT id, artwork_id, storage_key, caption, is_primary, created_at
+            FROM photos
+            WHERE uploaded_by = ?
+            ORDER BY created_at ASC
+          `).bind(userId).all(),
+          env.DB.prepare(`
+            SELECT id, artwork_id, before_json, after_json, created_at
+            FROM artwork_revisions
+            WHERE edited_by = ?
+            ORDER BY created_at ASC
+          `).bind(userId).all(),
+          env.DB.prepare(`
+            SELECT checkins.artwork_id, checkins.checked_in_at, artworks.title
+            FROM checkins
+            LEFT JOIN artworks ON artworks.id = checkins.artwork_id
+            WHERE checkins.user_id = ?
+            ORDER BY checkins.checked_in_at ASC
+          `).bind(userId).all(),
+          env.DB.prepare(`
+            SELECT id, artwork_id, report_type, date_observed, note,
+                   replacement_artwork_id, moderation_state, created_at
+            FROM artwork_status_reports
+            WHERE reporting_user_id = ?
+            ORDER BY created_at ASC
+          `).bind(userId).all(),
+        ]);
+
+      return Response.json(
+        {
+          format: "artility-account-export-v1",
+          exported_at: new Date().toISOString(),
+          account,
+          preferences: { home_area: homeArea },
+          contributions: {
+            artworks: artworks.results,
+            photos: photos.results,
+            revisions: revisions.results,
+            status_reports: statusReports.results,
+          },
+          checkins: checkins.results,
+          deletion_policy: ACCOUNT_DELETION_POLICY,
+        },
+        {
+          headers: {
+            "cache-control": "private, no-store",
+            "content-disposition": `attachment; filename="artility-data-${new Date().toISOString().slice(0, 10)}.json"`,
+          },
+        },
+      );
+    }
+
+    if (url.pathname === "/api/account" && request.method === "DELETE") {
+      const session = await auth.api.getSession({ headers: request.headers });
+
+      if (!session?.user) {
+        return Response.json(
+          { error: "Not signed in", code: "NOT_SIGNED_IN" },
+          { status: 401 },
+        );
+      }
+
+      const body = (await request.json().catch(() => null)) as {
+        confirmation?: unknown;
+      } | null;
+
+      if (!confirmsAccountDeletion(body?.confirmation)) {
+        return Response.json(
+          { error: 'Type "DELETE" to confirm account deletion.' },
+          { status: 400 },
+        );
+      }
+
+      const userId = session.user.id;
+      const email = session.user.email;
+      const [artworkCount, photoCount] = await Promise.all([
+        env.DB.prepare("SELECT COUNT(*) AS count FROM artworks WHERE added_by = ?")
+          .bind(userId)
+          .first<{ count: number }>(),
+        env.DB.prepare("SELECT COUNT(*) AS count FROM photos WHERE uploaded_by = ?")
+          .bind(userId)
+          .first<{ count: number }>(),
+      ]);
+      const deletionId = crypto.randomUUID();
+
+      await env.DB.batch([
+        env.DB.prepare(`
+          INSERT INTO account_deletion_audit (
+            id, anonymised_artwork_count, anonymised_photo_count
+          ) VALUES (?, ?, ?)
+        `).bind(
+          deletionId,
+          Number(artworkCount?.count ?? 0),
+          Number(photoCount?.count ?? 0),
+        ),
+        env.DB.prepare("UPDATE artworks SET added_by = NULL WHERE added_by = ?").bind(userId),
+        env.DB.prepare("UPDATE photos SET uploaded_by = NULL WHERE uploaded_by = ?").bind(userId),
+        env.DB.prepare("UPDATE photos SET reviewed_by = NULL WHERE reviewed_by = ?").bind(userId),
+        env.DB.prepare("UPDATE artwork_tags SET added_by = NULL WHERE added_by = ?").bind(userId),
+        env.DB.prepare("UPDATE artwork_revisions SET edited_by = 'deleted-account' WHERE edited_by = ?").bind(userId),
+        env.DB.prepare("UPDATE artwork_status_reports SET reporting_user_id = 'deleted-account' WHERE reporting_user_id = ?").bind(userId),
+        env.DB.prepare("UPDATE artwork_status_reports SET reviewed_by = NULL WHERE reviewed_by = ?").bind(userId),
+        env.DB.prepare("UPDATE user_roles SET granted_by = NULL WHERE granted_by = ?").bind(userId),
+        env.DB.prepare("DELETE FROM checkins WHERE user_id = ?").bind(userId),
+        env.DB.prepare("DELETE FROM user_home_areas WHERE user_id = ?").bind(userId),
+        env.DB.prepare("DELETE FROM image_upload_events WHERE user_id = ?").bind(userId),
+        env.DB.prepare("DELETE FROM user_roles WHERE user_id = ?").bind(userId),
+        env.DB.prepare("DELETE FROM email_notification_outbox WHERE event_type = 'new_registration' AND entity_id = ?").bind(userId),
+        env.DB.prepare("DELETE FROM verification WHERE identifier = ?").bind(email),
+        env.DB.prepare("DELETE FROM session WHERE userId = ?").bind(userId),
+        env.DB.prepare("DELETE FROM account WHERE userId = ?").bind(userId),
+        env.DB.prepare("DELETE FROM \"user\" WHERE id = ?").bind(userId),
+      ]);
+
+      return Response.json(
+        { deleted: true, deletion_id: deletionId },
+        { headers: { "cache-control": "private, no-store" } },
+      );
+    }
+
     if (
       url.pathname === "/api/location/approximate" &&
       request.method === "GET"
@@ -2436,6 +2786,7 @@ export default {
         const infrastructureType = normaliseInfrastructureType(
           formData.get("infrastructure_type") ?? "",
         );
+        const tags = normaliseArtworkTags(formData.getAll("tags"));
 
         const latitude = Number(formData.get("latitude"));
         const longitude = Number(formData.get("longitude"));
@@ -2458,6 +2809,14 @@ export default {
           artworkUploadMeasurement.finish({ outcome: "invalid artwork setting" });
           return Response.json(
             { error: "Choose a valid artwork setting" },
+            { status: 400 },
+          );
+        }
+
+        if (!tags) {
+          artworkUploadMeasurement.finish({ outcome: "invalid artwork tags" });
+          return Response.json(
+            { error: "Choose up to five valid artwork tags" },
             { status: 400 },
           );
         }
@@ -2544,6 +2903,14 @@ export default {
         const artworkId = Number(
           artworkInsert.meta.last_row_id
         );
+        if (tags.length > 0) {
+          await env.DB.batch(
+            tags.map((tag) => env.DB.prepare(`
+              INSERT INTO artwork_tags (artwork_id, tag, added_by)
+              VALUES (?, ?, ?)
+            `).bind(artworkId, tag, userId)),
+          );
+        }
         artworkRecordMeasurement.finish({ artworkId });
 
         const moderation = [];
@@ -3123,7 +3490,7 @@ photos.created_at AS photo_added_at
         };
       }
 
-      return Response.json(artworks);
+      return Response.json(await addTagsToArtworks(env, artworks));
     }
 
     const artworkStatusReportsMatch = url.pathname.match(
@@ -3453,8 +3820,14 @@ if (artworkDetailMatch && request.method === "GET") {
     .bind(artworkId)
     .all();
 
+  const tagsByArtwork = await loadTagsForArtworks(env, [artworkId]);
+
   return Response.json({
-    artwork: { ...artwork, ...correctedArtwork },
+    artwork: {
+      ...artwork,
+      ...correctedArtwork,
+      tags: tagsByArtwork.get(artworkId) ?? [],
+    },
     photos: photos.results,
   });
 }
@@ -3518,6 +3891,9 @@ if (artworkDetailMatch && request.method === "GET") {
 
         const body = (await request.json()) as Record<string, unknown>;
 
+        const currentTags =
+          (await loadTagsForArtworks(env, [artworkId])).get(artworkId) ?? [];
+
         const allowedFields = new Set([
           "title",
           "description",
@@ -3526,6 +3902,7 @@ if (artworkDetailMatch && request.method === "GET") {
           "instagram_handle",
           "latitude",
           "longitude",
+          "tags",
         ]);
 
         for (const key of Object.keys(body)) {
@@ -3537,6 +3914,17 @@ if (artworkDetailMatch && request.method === "GET") {
           }
 
           const value = body[key];
+
+          if (key === "tags") {
+            if (!normaliseArtworkTags(value)) {
+              return Response.json(
+                { error: "Choose up to five valid artwork tags" },
+                { status: 400 },
+              );
+            }
+
+            continue;
+          }
 
           const isCoordinate = key === "latitude" || key === "longitude";
 
@@ -3559,6 +3947,9 @@ if (artworkDetailMatch && request.method === "GET") {
         const coordinatesTouched =
           Object.prototype.hasOwnProperty.call(body, "latitude") ||
           Object.prototype.hasOwnProperty.call(body, "longitude");
+        const tags = Object.prototype.hasOwnProperty.call(body, "tags")
+          ? normaliseArtworkTags(body.tags) ?? []
+          : currentTags;
 
         if (coordinatesTouched) {
           const adminAccess = await requireAdmin();
@@ -3703,6 +4094,7 @@ if (artworkDetailMatch && request.method === "GET") {
           artist_id: current.artist_id,
           artist_name: current.artist_name,
           instagram_handle: current.instagram_handle,
+          tags: currentTags,
         };
 
         const after = {
@@ -3716,6 +4108,7 @@ if (artworkDetailMatch && request.method === "GET") {
           artist_id: artistId,
           artist_name: finalArtistName,
           instagram_handle: finalInstagramHandle,
+          tags,
         };
 
         if (JSON.stringify(before) === JSON.stringify(after)) {
@@ -3726,7 +4119,7 @@ if (artworkDetailMatch && request.method === "GET") {
           });
         }
 
-        await env.DB.batch([
+        const statements = [
           env.DB.prepare(`
             UPDATE artworks
             SET title = ?,
@@ -3765,7 +4158,20 @@ if (artworkDetailMatch && request.method === "GET") {
             JSON.stringify(before),
             JSON.stringify(after),
           ),
-        ]);
+        ];
+
+        if (Object.prototype.hasOwnProperty.call(body, "tags")) {
+          statements.push(
+            env.DB.prepare("DELETE FROM artwork_tags WHERE artwork_id = ?")
+              .bind(artworkId),
+            ...tags.map((tag) => env.DB.prepare(`
+              INSERT INTO artwork_tags (artwork_id, tag, added_by)
+              VALUES (?, ?, ?)
+            `).bind(artworkId, tag, userId)),
+          );
+        }
+
+        await env.DB.batch(statements);
 
         return Response.json({
           success: true,
@@ -4148,6 +4554,14 @@ artists.name AS artist_name,
       return new Response(object.body, {
         headers,
       });
+    }
+
+    if (
+      request.method === "GET" &&
+      (/^\/artwork\/\d+$/.test(url.pathname) ||
+        /^\/artist\/[^/]+$/.test(url.pathname))
+    ) {
+      return renderSharePage(request, env, url);
     }
 
     return new Response("Not found", {

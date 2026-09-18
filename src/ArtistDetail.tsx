@@ -4,6 +4,7 @@ import "./App.css";
 import { getArtworkDisplayTitle } from "./artworkDisplay";
 import { formatInfrastructureType } from "../shared/infrastructure-types";
 import AddToWalkButton from "./AddToWalkButton";
+import { usePageMetadata } from "./pageMetadata";
 
 type Artist = {
   id: number;
@@ -39,6 +40,15 @@ export default function ArtistDetail() {
   const [data, setData] = useState<ArtistResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  usePageMetadata(
+    data?.artist.name ?? "Artist",
+    data?.artist.bio?.trim() ||
+      (data ? `Explore public artwork attributed to ${data.artist.name} on Artility.` : "Explore artists on Artility."),
+    data?.artworks[0]?.primary_photo
+      ? `/api/images/${data.artworks[0].primary_photo}`
+      : null,
+  );
 
   useEffect(() => {
     async function loadArtist() {

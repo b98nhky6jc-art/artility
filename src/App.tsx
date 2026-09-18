@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 import "./App.css";
 import ArtworkMap from "./ArtworkMap";
 import { authClient } from "./lib/auth-client";
@@ -19,6 +19,12 @@ import {
   DISCOVERY_CATEGORIES,
   getDiscoveryCategoryBySlug,
 } from "./categories";
+import {
+  ARTWORK_TAGS,
+  getArtworkTagBySlug,
+  slugifyDiscoveryValue,
+} from "../shared/artwork-tags";
+import { usePageMetadata } from "./pageMetadata";
 
 
 type Artwork = {
@@ -36,6 +42,7 @@ type Artwork = {
   primary_photo: string | null;
   artist_id: number | null;
   created_at: string | null;
+  tags: string[];
 };
 
 function getDiscoveryArtworkTitle(artwork: Artwork) {
@@ -45,6 +52,7 @@ function getDiscoveryArtworkTitle(artwork: Artwork) {
 function App() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { placeSlug, tagSlug } = useParams();
   const [artworks, setArtworks] = useState<Artwork[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -58,6 +66,10 @@ function App() {
   const sortWasChosen = useRef(false);
   const activeCategory = getDiscoveryCategoryBySlug(
     new URLSearchParams(location.search).get("category"),
+  );
+  const searchQuery = new URLSearchParams(location.search).get("q") ?? "";
+  const activeTag = getArtworkTagBySlug(
+    tagSlug ?? new URLSearchParams(location.search).get("tag"),
   );
   const { data: session } = authClient.useSession();
   const canContribute = canUserContribute(session?.user);
@@ -116,18 +128,65 @@ function App() {
       ? "newest"
       : artworkSort;
 
-  const categoryArtworks = useMemo(
-    () => activeCategory
-      ? artworks.filter((artwork) =>
-          artworkBelongsToCategory(artwork.infrastructure_type, activeCategory),
-        )
-      : artworks,
-    [activeCategory, artworks],
+  const activePlaceName = useMemo(() => {
+    if (!placeSlug) return null;
+
+    return artworks
+      .flatMap((artwork) => [artwork.town, artwork.city])
+      .find((place): place is string =>
+        Boolean(place && slugifyDiscoveryValue(place) === placeSlug),
+      ) ?? placeSlug.replaceAll("-", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  }, [artworks, placeSlug]);
+
+  const pageTitle = activeTag
+    ? `${activeTag} artwork`
+    : activePlaceName
+      ? `Artwork in ${activePlaceName}`
+      : activeCategory?.name ?? "Artility";
+  usePageMetadata(
+    pageTitle,
+    activeTag
+      ? `Discover ${activeTag.toLowerCase()} public artwork on Artility.`
+      : activePlaceName
+        ? `Discover public artwork found in ${activePlaceName} on Artility.`
+        : "Find local public art, discover artists and explore your neighbourhood.",
+  );
+
+  const filteredArtworks = useMemo(
+    () => {
+      const query = searchQuery.trim().toLocaleLowerCase("en");
+
+      return artworks.filter((artwork) => {
+        if (
+          activeCategory &&
+          !artworkBelongsToCategory(artwork.infrastructure_type, activeCategory)
+        ) return false;
+        if (activeTag && !artwork.tags?.includes(activeTag)) return false;
+        if (
+          placeSlug &&
+          ![artwork.town, artwork.city].some(
+            (place) => place && slugifyDiscoveryValue(place) === placeSlug,
+          )
+        ) return false;
+        if (!query) return true;
+
+        return [
+          artwork.title,
+          artwork.description,
+          artwork.artist_name,
+          artwork.town,
+          artwork.city,
+          artwork.infrastructure_type,
+          ...(artwork.tags ?? []),
+        ].some((value) => value?.toLocaleLowerCase("en").includes(query));
+      });
+    },
+    [activeCategory, activeTag, artworks, placeSlug, searchQuery],
   );
 
   const { sortedArtworks, artworkDistances } = useMemo(
-    () => sortArtworks(categoryArtworks, activeLocation, effectiveArtworkSort),
-    [activeLocation, categoryArtworks, effectiveArtworkSort],
+    () => sortArtworks(filteredArtworks, activeLocation, effectiveArtworkSort),
+    [activeLocation, filteredArtworks, effectiveArtworkSort],
   );
 
   const visibleArtworks = sortedArtworks.slice(0, visibleArtworkCount);
@@ -145,11 +204,28 @@ function App() {
     const categorySlug = event.target.value;
 
     setVisibleArtworkCount(ARTWORK_PAGE_SIZE);
+    updateQueryFilter("category", categorySlug);
+  }
+
+  function updateQueryFilter(key: string, value: string) {
+    const params = new URLSearchParams(location.search);
+    if (value) params.set(key, value);
+    else params.delete(key);
+
+    navigate({ pathname: location.pathname, search: params.toString(), hash: "#nearby" });
+    setVisibleArtworkCount(ARTWORK_PAGE_SIZE);
+  }
+
+  function handleTagChange(event: React.ChangeEvent<HTMLSelectElement>) {
+    const nextTag = event.target.value;
+    const params = new URLSearchParams(location.search);
+    params.delete("tag");
     navigate({
-      pathname: "/",
-      search: categorySlug ? `?category=${categorySlug}` : "",
+      pathname: nextTag ? `/tags/${nextTag}` : "/",
+      search: params.toString(),
       hash: "#nearby",
     });
+    setVisibleArtworkCount(ARTWORK_PAGE_SIZE);
   }
 
   function preferClosestLocationSort() {
@@ -263,7 +339,7 @@ function App() {
 
           <div className="map-wrapper" id="home-map">
             <ArtworkMap
-              artworks={categoryArtworks}
+              artworks={filteredArtworks}
               userLocation={activeMode === "device" ? deviceLocation : null}
               focusLocation={activeLocation}
               preserveUserLocation={Boolean(activeLocation)}
@@ -283,15 +359,36 @@ function App() {
                     ? `EXPLORE ${manualPlace?.name.toUpperCase() ?? "A PLACE"}`
                     : "DISCOVER"}
               </span>
-              <h3>{activeCategory ? activeCategory.name : "Nearby artwork"}</h3>
-              {activeCategory && (
+              <h3>
+                {activeTag
+                  ? `${activeTag} artwork`
+                  : activePlaceName
+                    ? `Artwork in ${activePlaceName}`
+                    : activeCategory?.name ?? "Nearby artwork"}
+              </h3>
+              {(activeCategory || activeTag || activePlaceName || searchQuery) && (
                 <p className="active-category-summary">
-                  Showing only {activeCategory.name.toLowerCase()} artwork
+                  {sortedArtworks.length} matching {sortedArtworks.length === 1 ? "artwork" : "artworks"}
                 </p>
               )}
+              <div className="discovery-directory-links">
+                <Link to="/categories">Categories</Link>
+                <Link to="/places">Places</Link>
+                <Link to="/tags">Tags</Link>
+              </div>
             </div>
 
             <div className="discovery-controls">
+              <label className="discovery-sort-control discovery-search-control">
+                <span>Search artwork</span>
+                <input
+                  className="artist-search"
+                  type="search"
+                  value={searchQuery}
+                  placeholder="Title, artist, town or city…"
+                  onChange={(event) => updateQueryFilter("q", event.target.value)}
+                />
+              </label>
               <label className="discovery-sort-control">
                 <span>Category</span>
                 <select
@@ -305,6 +402,21 @@ function App() {
                     <option key={category.slug} value={category.slug}>
                       {category.name}
                     </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="discovery-sort-control">
+                <span>Tag</span>
+                <select
+                  className="artist-sort"
+                  aria-label="Filter artwork by tag"
+                  value={activeTag ? slugifyDiscoveryValue(activeTag) : ""}
+                  onChange={handleTagChange}
+                >
+                  <option value="">All tags</option>
+                  {ARTWORK_TAGS.map((tag) => (
+                    <option key={tag} value={slugifyDiscoveryValue(tag)}>{tag}</option>
                   ))}
                 </select>
               </label>

@@ -8,6 +8,8 @@ export default function SiteFooter() {
         <Link to="/faq">FAQ</Link>
         <Link to="/privacy">Privacy policy</Link>
         <Link to="/copyright">Copyright</Link>
+        <Link to="/places">Places</Link>
+        <Link to="/tags">Tags</Link>
         <a
           href="https://chat.whatsapp.com/GA0tCNKFqsRKjSaNgodPVw"
           target="_blank"

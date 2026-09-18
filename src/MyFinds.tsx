@@ -9,6 +9,10 @@ import { canUserContribute } from "./emailVerification";
 import { formatInfrastructureType } from "../shared/infrastructure-types";
 import { useAdminAccess } from "./useModeratorAccess";
 import AddToWalkButton from "./AddToWalkButton";
+import {
+  ACCOUNT_DELETION_CONFIRMATION,
+  ACCOUNT_DELETION_POLICY,
+} from "../shared/account-data";
 
 type Find = {
   instagram_handle: string | null;
@@ -67,6 +71,11 @@ export default function MyFinds() {
   const [adminUsers, setAdminUsers] = useState<AdminUser[] | null>(null);
   const [adminUsersLoading, setAdminUsersLoading] = useState(false);
   const [adminUsersError, setAdminUsersError] = useState("");
+  const [exportingData, setExportingData] = useState(false);
+  const [accountActionError, setAccountActionError] = useState("");
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deletingAccount, setDeletingAccount] = useState(false);
   const { data: session } = authClient.useSession();
   const { isAdmin } = useAdminAccess(session?.user.id);
   const canContribute = canUserContribute(session?.user);
@@ -158,6 +167,47 @@ export default function MyFinds() {
     }
   }
 
+  async function exportAccountData() {
+    setExportingData(true);
+    setAccountActionError("");
+
+    try {
+      const response = await fetch("/api/account/export", { cache: "no-store" });
+      if (!response.ok) throw new Error("Could not export your account data.");
+      const blob = await response.blob();
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = `artility-data-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(downloadUrl);
+    } catch (error) {
+      setAccountActionError(error instanceof Error ? error.message : "Could not export your account data.");
+    } finally {
+      setExportingData(false);
+    }
+  }
+
+  async function deleteAccount(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setDeletingAccount(true);
+    setAccountActionError("");
+
+    try {
+      const response = await fetch("/api/account", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ confirmation: deleteConfirmation }),
+      });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Could not delete your account.");
+      window.location.href = "/";
+    } catch (error) {
+      setAccountActionError(error instanceof Error ? error.message : "Could not delete your account.");
+      setDeletingAccount(false);
+    }
+  }
+
   return (
     <div className="detail-shell">
       <header className="detail-header">
@@ -242,6 +292,61 @@ export default function MyFinds() {
             )}
           </div>
         </section>
+
+        {session?.user && (
+          <section className="page-panel account-data-panel" aria-labelledby="account-data-heading">
+            <span className="eyebrow">YOUR DATA</span>
+            <h2 id="account-data-heading">Account data</h2>
+            <p>Download a machine-readable copy of your account, check-ins and contribution history.</p>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={exportingData}
+              onClick={() => void exportAccountData()}
+            >
+              {exportingData ? "Preparing export…" : "Download my data"}
+            </button>
+
+            <div className="account-delete-section">
+              <h3>Delete account</h3>
+              <p>
+                Your account, sessions and check-ins will be removed. Published contributions and moderation history remain public or operational but are anonymised.
+              </p>
+              {!showDeleteAccount ? (
+                <button type="button" className="text-button danger-text-button" onClick={() => setShowDeleteAccount(true)}>
+                  Delete my account…
+                </button>
+              ) : (
+                <form onSubmit={deleteAccount} className="account-delete-form">
+                  <label>
+                    Type <strong>{ACCOUNT_DELETION_CONFIRMATION}</strong> to permanently delete your account
+                    <input
+                      value={deleteConfirmation}
+                      onChange={(event) => setDeleteConfirmation(event.target.value)}
+                      autoComplete="off"
+                    />
+                  </label>
+                  <div>
+                    <button
+                      type="submit"
+                      className="delete-artwork-button"
+                      disabled={deletingAccount || deleteConfirmation !== ACCOUNT_DELETION_CONFIRMATION}
+                    >
+                      {deletingAccount ? "Deleting account…" : "Permanently delete account"}
+                    </button>
+                    <button type="button" className="text-button" onClick={() => { setShowDeleteAccount(false); setDeleteConfirmation(""); }}>
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+              <p className="account-retention-summary">
+                Retained anonymously: {ACCOUNT_DELETION_POLICY.retainedAnonymously.join(", ")}.
+              </p>
+            </div>
+            {accountActionError && <p className="form-error" role="alert">{accountActionError}</p>}
+          </section>
+        )}
 
         {isAdmin && (
           <section className="page-panel admin-profile-overview">
