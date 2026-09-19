@@ -77,12 +77,10 @@ async function deliverVerificationEmail(
       to: [email],
       subject: "Verify your Artility email",
       text: [
-        "Welcome to Artility.",
-        "",
-        "Verify your email to upload artwork, edit details, and check in:",
+        "Confirm this email address for your Artility account:",
         verificationUrl,
         "",
-        "You can still browse Artility before verifying.",
+        "A verified email is required to upload artwork, edit details, and check in.",
         "",
         "This link expires in one hour.",
       ].join("\n"),
@@ -93,6 +91,44 @@ async function deliverVerificationEmail(
     const details = await response.text();
     throw new Error(
       `Verification email delivery failed (${response.status}): ${details}`,
+    );
+  }
+}
+
+async function deliverEmailChangeConfirmation(
+  env: Env,
+  currentEmail: string,
+  newEmail: string,
+  confirmationUrl: string,
+) {
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${env.RESEND_API_KEY}`,
+      "content-type": "application/json",
+      "user-agent": "artility-worker/1.0",
+    },
+    body: JSON.stringify({
+      from: "Artility <verify@send.artility.co.uk>",
+      to: [currentEmail],
+      subject: "Confirm your Artility email change",
+      text: [
+        "Someone signed in to your Artility account has asked to change its email address.",
+        "",
+        `New email: ${newEmail}`,
+        "",
+        "If this was you, confirm the change:",
+        confirmationUrl,
+        "",
+        "If you did not request this, do not use the link.",
+      ].join("\n"),
+    }),
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(
+      `Email change confirmation delivery failed (${response.status}): ${details}`,
     );
   }
 }
@@ -652,6 +688,23 @@ export function createAuth(env: Env, ctx: ExecutionContext) {
     plugins: [username()],
 
     user: {
+      changeEmail: {
+        enabled: true,
+        sendChangeEmailConfirmation: async ({ user, newEmail, url }) => {
+          const delivery = deliverEmailChangeConfirmation(
+            env,
+            user.email,
+            newEmail,
+            url,
+          );
+
+          ctx.waitUntil(
+            delivery.catch((error) => {
+              console.error("Email change confirmation delivery failed:", error);
+            }),
+          );
+        },
+      },
       additionalFields: {
         displayName: {
           type: "string",

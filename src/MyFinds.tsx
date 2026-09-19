@@ -76,9 +76,22 @@ export default function MyFinds() {
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [editingAccount, setEditingAccount] = useState(false);
+  const [accountName, setAccountName] = useState("");
+  const [accountEmail, setAccountEmail] = useState("");
+  const [savingAccountName, setSavingAccountName] = useState(false);
+  const [savingAccountEmail, setSavingAccountEmail] = useState(false);
+  const [accountSettingsMessage, setAccountSettingsMessage] = useState("");
+  const [accountSettingsError, setAccountSettingsError] = useState("");
   const { data: session } = authClient.useSession();
   const { isAdmin } = useAdminAccess(session?.user.id);
   const canContribute = canUserContribute(session?.user);
+
+  useEffect(() => {
+    if (!session?.user) return;
+    setAccountName(session.user.name ?? "");
+    setAccountEmail(session.user.email ?? "");
+  }, [session?.user?.email, session?.user?.name]);
 
   useEffect(() => {
     async function loadFinds() {
@@ -188,6 +201,62 @@ export default function MyFinds() {
     }
   }
 
+  async function updateAccountName(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = accountName.trim();
+
+    if (!name) {
+      setAccountSettingsError("Name cannot be empty.");
+      return;
+    }
+
+    setSavingAccountName(true);
+    setAccountSettingsError("");
+    setAccountSettingsMessage("");
+
+    const { error } = await authClient.updateUser({ name });
+
+    if (error) {
+      setAccountSettingsError(error.message || "Could not update your name.");
+      setSavingAccountName(false);
+      return;
+    }
+
+    setAccountSettingsMessage("Name updated.");
+    setSavingAccountName(false);
+    window.setTimeout(() => window.location.reload(), 500);
+  }
+
+  async function updateAccountEmail(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const newEmail = accountEmail.trim().toLowerCase();
+
+    if (!newEmail || newEmail === session?.user.email?.toLowerCase()) {
+      setAccountSettingsError("Enter a different email address.");
+      return;
+    }
+
+    setSavingAccountEmail(true);
+    setAccountSettingsError("");
+    setAccountSettingsMessage("");
+
+    const { error } = await authClient.changeEmail({
+      newEmail,
+      callbackURL: "/my-finds",
+    });
+
+    if (error) {
+      setAccountSettingsError(error.message || "Could not start the email change.");
+      setSavingAccountEmail(false);
+      return;
+    }
+
+    setAccountSettingsMessage(
+      "Email change started. Check your current email first, then verify the new address.",
+    );
+    setSavingAccountEmail(false);
+  }
+
   async function deleteAccount(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setDeletingAccount(true);
@@ -295,17 +364,95 @@ export default function MyFinds() {
 
         {session?.user && (
           <section className="page-panel account-data-panel" aria-labelledby="account-data-heading">
-            <span className="eyebrow">YOUR DATA</span>
-            <h2 id="account-data-heading">Account data</h2>
-            <p>Download a machine-readable copy of your account, check-ins and contribution history.</p>
-            <button
-              type="button"
-              className="secondary-button"
-              disabled={exportingData}
-              onClick={() => void exportAccountData()}
-            >
-              {exportingData ? "Preparing export…" : "Download my data"}
-            </button>
+            <span className="eyebrow">ACCOUNT</span>
+            <h2 id="account-data-heading">Account settings</h2>
+            <p>Update your account details or download a copy of the data Artility holds for you.</p>
+
+            <div className="account-details-section">
+              <div className="account-details-heading">
+                <div>
+                  <h3>Your details</h3>
+                  <p>{session.user.name} · {session.user.email}</p>
+                </div>
+                <button
+                  type="button"
+                  className="text-button"
+                  aria-expanded={editingAccount}
+                  onClick={() => {
+                    setEditingAccount((visible) => !visible);
+                    setAccountSettingsError("");
+                    setAccountSettingsMessage("");
+                  }}
+                >
+                  {editingAccount ? "Close" : "Edit user info"}
+                </button>
+              </div>
+
+              {editingAccount && (
+                <div className="account-edit-grid">
+                  <form className="account-edit-form" onSubmit={updateAccountName}>
+                    <label>
+                      Name
+                      <input
+                        value={accountName}
+                        onChange={(event) => setAccountName(event.target.value)}
+                        autoComplete="name"
+                        maxLength={80}
+                      />
+                    </label>
+                    <button
+                      type="submit"
+                      className="secondary-button"
+                      disabled={savingAccountName || !accountName.trim()}
+                    >
+                      {savingAccountName ? "Saving…" : "Save name"}
+                    </button>
+                  </form>
+
+                  <form className="account-edit-form" onSubmit={updateAccountEmail}>
+                    <label>
+                      Email
+                      <input
+                        type="email"
+                        value={accountEmail}
+                        onChange={(event) => setAccountEmail(event.target.value)}
+                        autoComplete="email"
+                      />
+                    </label>
+                    <button
+                      type="submit"
+                      className="secondary-button"
+                      disabled={savingAccountEmail || !accountEmail.trim()}
+                    >
+                      {savingAccountEmail ? "Sending…" : "Change email"}
+                    </button>
+                    <small>
+                      For security, Artility confirms the change before moving your account to the new address.
+                    </small>
+                  </form>
+                </div>
+              )}
+
+              {accountSettingsMessage && (
+                <p className="account-settings-success" role="status">{accountSettingsMessage}</p>
+              )}
+              {accountSettingsError && (
+                <p className="form-error account-settings-error" role="alert">{accountSettingsError}</p>
+              )}
+            </div>
+
+            <div className="account-export-section">
+              <h3>Your data</h3>
+              <p>Download a machine-readable copy of your account, check-ins and contribution history.</p>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={exportingData}
+                onClick={() => void exportAccountData()}
+              >
+                {exportingData ? "Preparing export…" : "Download my data"}
+              </button>
+            </div>
 
             <div className="account-delete-section">
               <h3>Delete account</h3>

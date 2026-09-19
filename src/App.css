@@ -5477,12 +5477,104 @@ main {
 }
 
 .account-data-panel {
+  margin-bottom: var(--section-gap);
   text-align: left;
 }
 
 .account-data-panel > p {
   max-width: 680px;
   line-height: 1.55;
+}
+
+.account-details-section,
+.account-export-section {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--soft-line);
+}
+
+.account-details-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.account-details-heading h3,
+.account-export-section h3 {
+  margin: 0 0 6px;
+}
+
+.account-details-heading p,
+.account-export-section p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.account-details-heading .text-button {
+  flex: 0 0 auto;
+}
+
+.account-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 20px;
+}
+
+.account-edit-form {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid var(--soft-line);
+  border-radius: var(--radius-medium);
+  background: var(--cream);
+}
+
+.account-edit-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.account-edit-form input {
+  width: 100%;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: var(--paper);
+  color: var(--ink-strong);
+  font: inherit;
+}
+
+.account-edit-form input:focus {
+  border-color: var(--focus-ring);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.account-edit-form .secondary-button {
+  width: fit-content;
+  min-height: 44px;
+}
+
+.account-edit-form small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.account-settings-success {
+  margin: 14px 0 0 !important;
+  color: var(--success-strong);
+  font-weight: 700;
+}
+
+.account-export-section .secondary-button {
+  margin-top: 14px;
 }
 
 .account-delete-section {
@@ -5547,6 +5639,23 @@ main {
 @media (max-width: 620px) {
   .account-data-panel {
     overflow: hidden;
+  }
+
+  .account-details-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .account-details-heading .text-button {
+    width: fit-content;
+  }
+
+  .account-edit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .account-edit-form .secondary-button {
+    width: 100%;
   }
 
   .account-delete-section {
