@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { authClient } from "./lib/auth-client";
 import { useAdminAccess } from "./useModeratorAccess";
@@ -15,7 +16,7 @@ function NavIcon({ name }: { name: NavIconName }) {
     "aria-hidden": true,
   };
 
-  const paths: Record<NavIconName, React.ReactNode> = {
+  const paths: Record<NavIconName, ReactNode> = {
     home: <><path d="M3.5 10.5 12 3l8.5 7.5" /><path d="M5.5 9.5V21h13V9.5" /></>,
     map: <><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z" /><circle cx="12" cy="10" r="2.2" /></>,
     add: <><path d="M12 5v14" /><path d="M5 12h14" /></>,
