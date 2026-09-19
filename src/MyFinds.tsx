@@ -82,6 +82,7 @@ export default function MyFinds() {
   const [savingAccountName, setSavingAccountName] = useState(false);
   const [savingAccountEmail, setSavingAccountEmail] = useState(false);
   const [accountSettingsMessage, setAccountSettingsMessage] = useState("");
+  const [accountSettingsError, setAccountSettingsError] = useState("");
   const { data: session } = authClient.useSession();
   const { isAdmin } = useAdminAccess(session?.user.id);
   const canContribute = canUserContribute(session?.user);
@@ -90,7 +91,7 @@ export default function MyFinds() {
     if (!session?.user) return;
     setAccountName(session.user.name ?? "");
     setAccountEmail(session.user.email ?? "");
-  }, [session?.user]);
+  }, [session?.user?.email, session?.user?.name]);
 
   useEffect(() => {
     async function loadFinds() {
@@ -205,18 +206,18 @@ export default function MyFinds() {
     const name = accountName.trim();
 
     if (!name) {
-      setAccountActionError("Name cannot be empty.");
+      setAccountSettingsError("Name cannot be empty.");
       return;
     }
 
     setSavingAccountName(true);
-    setAccountActionError("");
+    setAccountSettingsError("");
     setAccountSettingsMessage("");
 
     const { error } = await authClient.updateUser({ name });
 
     if (error) {
-      setAccountActionError(error.message || "Could not update your name.");
+      setAccountSettingsError(error.message || "Could not update your name.");
       setSavingAccountName(false);
       return;
     }
@@ -231,12 +232,12 @@ export default function MyFinds() {
     const newEmail = accountEmail.trim().toLowerCase();
 
     if (!newEmail || newEmail === session?.user.email?.toLowerCase()) {
-      setAccountActionError("Enter a different email address.");
+      setAccountSettingsError("Enter a different email address.");
       return;
     }
 
     setSavingAccountEmail(true);
-    setAccountActionError("");
+    setAccountSettingsError("");
     setAccountSettingsMessage("");
 
     const { error } = await authClient.changeEmail({
@@ -245,7 +246,7 @@ export default function MyFinds() {
     });
 
     if (error) {
-      setAccountActionError(error.message || "Could not start the email change.");
+      setAccountSettingsError(error.message || "Could not start the email change.");
       setSavingAccountEmail(false);
       return;
     }
@@ -379,7 +380,7 @@ export default function MyFinds() {
                   aria-expanded={editingAccount}
                   onClick={() => {
                     setEditingAccount((visible) => !visible);
-                    setAccountActionError("");
+                    setAccountSettingsError("");
                     setAccountSettingsMessage("");
                   }}
                 >
@@ -434,6 +435,9 @@ export default function MyFinds() {
 
               {accountSettingsMessage && (
                 <p className="account-settings-success" role="status">{accountSettingsMessage}</p>
+              )}
+              {accountSettingsError && (
+                <p className="form-error account-settings-error" role="alert">{accountSettingsError}</p>
               )}
             </div>
 
